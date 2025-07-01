@@ -6,6 +6,7 @@ import { bindWebGLLayer, createContoursProgram } from '@sigma/layer-webgl';
 import iwanthue from 'iwanthue';
 import { getSequentialColors, getPalettes } from 'dicopal';
 import { flushSync } from 'react-dom';
+import { scaleLinear, scaleLog, scaleSqrt, scalePow } from 'd3-scale';
 
 function SigmaNetwork({
   edgeRows = [],
@@ -60,6 +61,7 @@ function SigmaNetwork({
     cursor: 'pointer',
     fontSize: '11px'
   };
+  const [scaleType, setScaleType] = useState('linear');
 
   // Ref to always get latest enableDynamicEdges in callbacks
   const enableDynamicEdgesRef = useRef(enableDynamicEdges);
@@ -365,12 +367,14 @@ function SigmaNetwork({
 
   // Recompute legend/palette and visible set when colorBy changes
   useEffect(() => {
+    // Log effect triggers and prop stability
+    console.log('[Effect Triggered] edgeRows:', edgeRows, 'metadataRows:', metadataRows, 'colorBy:', colorBy, 'sequentialPaletteName:', sequentialPaletteName, 'isReversed:', isReversed);
+    console.log('[Effect Triggered] edgeRows ref:', edgeRows && edgeRows.length ? edgeRows[0] : edgeRows, 'metadataRows ref:', metadataRows && metadataRows.length ? metadataRows[0] : metadataRows);
     const inst = sigmaInstance.current;
     if (!inst) return;
     const graph = inst.getGraph();
-    // Don't reset isInitialLoadRef for color changes - only for data changes
     handleCommunities(graph);
-  }, [colorBy, sequentialPaletteName, isReversed]);
+  }, [edgeRows, metadataRows, colorBy, sequentialPaletteName, isReversed]);
 
   useEffect(() => {
     const resize = () => sigmaInstance.current?.refresh(
@@ -453,83 +457,124 @@ function SigmaNetwork({
     }
   }, [showPTULabels, palette]);
 
+  // Guard to prevent recursion
+  const handleCommunitiesRunning = useRef(false);
+
   // Compute community list & palette when graph is rendered, batching state updates to avoid intermediate empty palette
   const handleCommunities = (graph) => {
-    // Always precompute PTU palette for PTU label overlay (regardless of current colorBy)
-    const ptuSet = new Set();
-    graph.forEachNode((n, attrs) => {
-      const v = attrs.new_PTU;
-      ptuSet.add(v != null && v !== '' ? v : '');
-    });
-    const ptuList = Array.from(ptuSet);
-    const ptuColors = iwanthue(ptuList.length) || [];
-    const ptuPal = {};
-    ptuList.forEach((ptu, i) => {
-      ptuPal[ptu] = ptu === '' ? '#d3d3d3' : (ptuColors[i] || '#888');
-    });
-    ptuPaletteRef.current = ptuPal; // Always store PTU palette for label overlay
-    // Determine if numeric data
-    const nodes = [];
-    graph.forEachNode(node => nodes.push(node));
-    const numericData = nodes.map(node => ({ node, v: Number(graph.getNodeAttribute(node, colorBy)) }))
-      .filter(d => !isNaN(d.v));
-    const numeric = numericData.length === nodes.length;
-
-    // Prepare new state variables
-    let newPalette, newCommunities, newVisibleComms, newNumericPaletteState, newIsNumeric;
-
-    if (colorBy === 'new_PTU') {
-      newPalette = ptuPal;
-      newCommunities = Object.keys(ptuPal);
-      newVisibleComms = new Set(newCommunities);
-      newIsNumeric = false;
-    } else if (numeric) {
-      // Numeric mode
-      numericData.sort((a, b) => a.v - b.v);
-      const values = numericData.map(d => d.v);
-      numericDomainRef.current = [values[0], values[values.length - 1]];
-      let palColors = getSequentialColors(sequentialPaletteName, numericData.length);
-      if (isReversed) palColors = [...palColors].reverse();
-      const palMap = {};
-      numericData.forEach((d, i) => { palMap[d.node] = palColors[i] ?? '#888'; });
-      newPalette = palMap;
-      newCommunities = [];
-      newVisibleComms = new Set();
-      newNumericPaletteState = palColors;
-      newIsNumeric = true;
-    } else {
-      // Categorical mode
-      const commSet = new Set();
-      graph.forEachNode((node, attrs) => {
-        const v = attrs[colorBy];
-        if (v != null) commSet.add(v);
-      });
-      const allComms = Array.from(commSet);
-      let colorsCat = iwanthue(allComms.length) || [];
-      for (let i = colorsCat.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [colorsCat[i], colorsCat[j]] = [colorsCat[j], colorsCat[i]];
-      }
-      const nonMissing = allComms.filter(c => c !== '').sort((a, b) => a.localeCompare(b));
-      const missing = allComms.includes('') ? [''] : [];
-      newCommunities = [...nonMissing, ...missing];
-      newVisibleComms = new Set(newCommunities);
-      const pal = {};
-      newCommunities.forEach((comm, i) => {
-        pal[comm] = comm === '' ? '#d3d3d3' : (colorsCat[i] ?? '#888');
-      });
-      newPalette = pal;
-      newIsNumeric = false;
+    console.log('[handleCommunities] called');
+    if (handleCommunitiesRunning.current) {
+      console.warn('handleCommunities: already running, skipping to prevent recursion');
+      return;
     }
+    handleCommunitiesRunning.current = true;
+    try {
+      console.log('handleCommunities called');
+      // Always precompute PTU palette for PTU label overlay (regardless of current colorBy)
+      const ptuSet = new Set();
+      graph.forEachNode((n, attrs) => {
+        const v = attrs.new_PTU;
+        ptuSet.add(v != null && v !== '' ? v : '');
+      });
+      const ptuList = Array.from(ptuSet);
+      const ptuColors = iwanthue(ptuList.length) || [];
+      const ptuPal = {};
+      ptuList.forEach((ptu, i) => {
+        ptuPal[ptu] = ptu === '' ? '#d3d3d3' : (ptuColors[i] || '#888');
+      });
+      ptuPaletteRef.current = ptuPal; // Always store PTU palette for label overlay
+      // Determine if numeric data
+      const nodes = [];
+      graph.forEachNode(node => nodes.push(node));
+      const numericData = nodes.map(node => ({ node, v: Number(graph.getNodeAttribute(node, colorBy)) }))
+        .filter(d => !isNaN(d.v));
+      const numeric = numericData.length === nodes.length;
 
-    // Synchronously batch updates to avoid intermediate empty palette flashing
-    flushSync(() => {
+      // Prepare new state variables
+      let newPalette, newCommunities, newVisibleComms, newNumericPaletteState, newIsNumeric;
+
+      if (colorBy === 'new_PTU') {
+        newPalette = ptuPal;
+        newCommunities = Object.keys(ptuPal);
+        newVisibleComms = new Set(newCommunities);
+        newIsNumeric = false;
+      } else if (numeric) {
+        // Numeric mode - use linear scale for color mapping
+        const values = numericData.map(d => d.v);
+        const minVal = values.reduce((a, b) => Math.min(a, b), Infinity);
+        const maxVal = values.reduce((a, b) => Math.max(a, b), -Infinity);
+        numericDomainRef.current = [minVal, maxVal];
+        const numGradientSteps = 100;
+        console.log('[handleCommunities] before getSequentialColors', sequentialPaletteName, numGradientSteps);
+        let palColors = getSequentialColors(sequentialPaletteName, numGradientSteps);
+        console.log('[handleCommunities] after getSequentialColors');
+        if (isReversed) palColors = [...palColors].reverse();
+        const palMap = {};
+        const range = maxVal - minVal;
+        // Choose d3 scale based on scaleType
+        let scale;
+        if (scaleType === 'log') {
+          // Avoid log(0) by setting min to a small positive value if needed
+          const safeMin = minVal > 0 ? minVal : 1e-6;
+          scale = scaleLog().domain([safeMin, maxVal]).range([0, 1]);
+        } else if (scaleType === 'sqrt') {
+          scale = scaleSqrt().domain([minVal, maxVal]).range([0, 1]);
+        } else if (scaleType === 'pow') {
+          scale = scalePow().exponent(2).domain([minVal, maxVal]).range([0, 1]);
+        } else {
+          scale = scaleLinear().domain([minVal, maxVal]).range([0, 1]);
+        }
+
+        numericData.forEach(d => {
+          if (range === 0) {
+            palMap[d.node] = palColors[Math.floor(numGradientSteps / 2)] ?? '#888';
+          } else {
+            let scaled = scale(d.v);
+            // Clamp to [0,1] in case of out-of-domain
+            scaled = Math.max(0, Math.min(1, scaled));
+            const colorIndex = Math.floor(scaled * (numGradientSteps - 1));
+            palMap[d.node] = palColors[colorIndex] ?? '#888';
+          }
+        });
+        newPalette = palMap;
+        newCommunities = [];
+        newVisibleComms = new Set();
+        newNumericPaletteState = palColors;
+        newIsNumeric = true;
+      } else {
+        // Categorical mode
+        const commSet = new Set();
+        graph.forEachNode((node, attrs) => {
+          const v = attrs[colorBy];
+          if (v != null) commSet.add(v);
+        });
+        const allComms = Array.from(commSet);
+        let colorsCat = iwanthue(allComms.length) || [];
+        for (let i = colorsCat.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [colorsCat[i], colorsCat[j]] = [colorsCat[j], colorsCat[i]];
+        }
+        const nonMissing = allComms.filter(c => c !== '').sort((a, b) => a.localeCompare(b));
+        const missing = allComms.includes('') ? [''] : [];
+        newCommunities = [...nonMissing, ...missing];
+        newVisibleComms = new Set(newCommunities);
+        const pal = {};
+        newCommunities.forEach((comm, i) => {
+          pal[comm] = comm === '' ? '#d3d3d3' : (colorsCat[i] ?? '#888');
+        });
+        newPalette = pal;
+        newIsNumeric = false;
+      }
+
+      // Synchronously batch updates to avoid intermediate empty palette flashing
       setIsNumeric(newIsNumeric);
       setPalette(newPalette);
       setCommunities(newCommunities);
       setVisibleComms(newVisibleComms);
       if (newNumericPaletteState) setNumericPaletteState(newNumericPaletteState);
-    });
+    } finally {
+      handleCommunitiesRunning.current = false;
+    }
   };
 
   // Determine which node info to display: clicked (highlighted) has priority over hover
@@ -552,21 +597,77 @@ function SigmaNetwork({
         {/* Legend Panel */}
         {showLegend && (
           <div style={{ marginBottom: '16px', width: 220, maxHeight: '40vh', overflowY: 'auto', background: '#fff', border: '1px solid #ccc', borderRadius: 4, padding: '8px', fontSize: '11px', boxShadow: '0 2px 6px rgba(0,0,0,0.15)' }}>
-            <button onClick={toggleAll} style={{
-  ...buttonStyle,
-  width: '100%',
-  marginBottom: '10px',
-}}>
-              {visibleComms.size < communities.length ? 'Show All' : 'Hide All'}
-            </button>
-            {communities.map(comm => (
-              <div key={comm} style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
-                <span onClick={() => toggleComm(comm)} style={{ width: '10px', height: '10px', backgroundColor: palette[comm], marginRight: '6px', cursor: 'pointer', opacity: visibleComms.has(comm) ? 1 : 0.3, flexShrink: 0 }} />
-                <span onClick={() => toggleHighlight(comm)} style={{ cursor: 'pointer', fontWeight: highlightedComms.has(comm) ? 'bold' : 'normal', fontSize: '11px' }}>
-                  {comm || '(missing)'}
-                </span>
+            {(() => {
+              console.log('Legend Debug - colorBy:', colorBy);
+              console.log('Legend Debug - isNumeric:', isNumeric);
+              console.log('Legend Debug - numericDomainRef.current:', numericDomainRef.current);
+              console.log('Legend Debug - numericPaletteState:', numericPaletteState);
+              return null;
+            })()}
+            
+            {isNumeric ? (
+              // Continuous colorbar for numeric values
+              <div>
+                <div style={{ marginBottom: '10px', fontWeight: 'bold' }}>{colorBy}</div>
+                <div style={{ 
+                  height: '20px', 
+                  background: `linear-gradient(to right, ${numericPaletteState.join(', ')})`,
+                  border: '1px solid #ccc',
+                  borderRadius: '3px',
+                  marginBottom: '8px'
+                }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px' }}>
+                  <span>{numericDomainRef.current[0]?.toFixed(2)}</span>
+                  <span>{numericDomainRef.current[1]?.toFixed(2)}</span>
+                </div>
+                {/* Palette selector dropdown for numeric columns */}
+                <div style={{ marginTop: 8 }}>
+                  <label htmlFor="paletteSelect" style={{ marginRight: 8 }}>Color palette:</label>
+                  <select
+                    id="paletteSelect"
+                    value={sequentialPaletteName}
+                    onChange={e => setSequentialPaletteName(e.target.value)}
+                  >
+                    {paletteOptions.map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+                {/* Scale type dropdown for numeric columns */}
+                <div style={{ marginTop: 8 }}>
+                  <label htmlFor="scaleSelect" style={{ marginRight: 8 }}>Scale:</label>
+                  <select
+                    id="scaleSelect"
+                    value={scaleType}
+                    onChange={e => setScaleType(e.target.value)}
+                  >
+                    <option value="linear">Linear</option>
+                    <option value="log">Log</option>
+                    <option value="sqrt">Sqrt</option>
+                    <option value="pow">Power (2)</option>
+                  </select>
+                </div>
               </div>
-            ))}
+            ) : (
+              // Discrete legend for categorical values
+              <div>
+                <button onClick={toggleAll} style={{
+                  ...buttonStyle,
+                  width: '100%',
+                  marginBottom: '10px',
+                }}>
+                  {visibleComms.size < communities.length ? 'Show All' : 'Hide All'}
+                </button>
+                {communities.map(comm => (
+                  <div key={comm} style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
+                    <span onClick={() => toggleComm(comm)} style={{ width: '10px', height: '10px', backgroundColor: palette[comm], marginRight: '6px', cursor: 'pointer', opacity: visibleComms.has(comm) ? 1 : 0.3, flexShrink: 0 }} />
+                    <span onClick={() => toggleHighlight(comm)} style={{ cursor: 'pointer', fontWeight: highlightedComms.has(comm) ? 'bold' : 'normal', fontSize: '11px' }}>
+                      {comm || '(missing)'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {/* Legend Toggle Button */}
