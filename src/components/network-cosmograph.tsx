@@ -48,6 +48,8 @@ const DEFAULT_CONFIG: CosmographConfig = {
   linkOpacity: 0.15,
   showClusterLabels: false,
   usePointColorStrategyForClusterLabels: false,
+  fitViewOnInit: false,
+  initialZoomLevel: 0.01
 }
 
 const DARK_BG: [number, number, number, number] = [18, 19, 20, 1]
