@@ -425,7 +425,7 @@ export function NodeDataTable({
         themeOverride: highlightTheme,
       } satisfies TextCell
     },
-    [columns, filteredRowIndices, totalRows, searchValue, isDark, getRawValue, selectedRowSet]
+    [columns, filteredRowIndices, totalRows, searchValue, isDark, getRawValue, selectedRowSet, dataSource]
   )
 
   
@@ -661,7 +661,7 @@ export function NodeDataTable({
             </label>
           </div>
           <button
-            className="rounded-md border border-primary/50 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary shadow-sm transition hover:bg-primary/20 hover:shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:translate-y-[0.5px] disabled:cursor-not-allowed disabled:border-muted disabled:text-muted-foreground disabled:hover:bg-background disabled:opacity-40"
+            className="rounded-md border border-primary/50 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary shadow-sm transition hover:bg-primary/20 hover:shadow focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary active:translate-y-[0.5px] disabled:cursor-not-allowed disabled:border-muted disabled:text-muted-foreground disabled:hover:bg-background disabled:opacity-40"
             onClick={handleDownloadSelected}
             disabled={
               !selectedRowIndices || selectedRowIndices.length === 0 || columns.length === 0 || !dataSource

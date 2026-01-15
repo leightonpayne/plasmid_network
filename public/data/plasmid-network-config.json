@@ -10,6 +10,7 @@
   "pointIncludeColumns": [
     "id",
     "PTU cluster",
+    "Average Dice Dissimilarity",
     "Plasmid length (bp)",
     "Topology",
     "Putative phage plasmid",
@@ -60,7 +61,6 @@
     "Infomap Cluster Level 6",
     "Infomap Cluster Level 7",
     "Infomap Cluster Level 8",
-    "Average Dice Dissimilarity",
     "Assembly ID"
   ],
   "numericColumns": [
@@ -386,7 +386,8 @@
       "network"
     ],
     "Average Dice Dissimilarity": [
-      "network"
+      "defense",
+      "plasmid"
     ],
     "Assembly ID": [
       "metadata"

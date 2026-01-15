@@ -45,7 +45,7 @@ type PlasmidData = {
 const REMOTE_BASE =
   "https://raw.githubusercontent.com/pentamorfico/plsdb_imgpr_json/refs/heads/master/"
 const MIN_RADIUS = 110
-const BASE_TRACK_HEIGHT = 1
+const BASE_TRACK_HEIGHT = 1.5
 const REGION_TRACK_OFFSET = 2
 const REGION_TRACK_HEIGHT = 10
 

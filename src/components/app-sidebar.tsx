@@ -1,4 +1,30 @@
 import * as React from "react"
+
+import { Button } from "@/components/ui/button"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  useSidebar,
+} from "@/components/ui/sidebar"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
+import { Slider } from "@/components/ui/slider"
+import { Card, CardContent } from "@/components/ui/card"
+import { PlasmidView } from "@/components/plasmid-view"
+import { Badge } from "@/components/ui/badge"
+import { getSequentialColors, getPalettes } from "dicopal"
+
 const LOGO_CX = 150
 const LOGO_CY = 150
 
@@ -117,35 +143,13 @@ function PlasmidLogo({ className }: { className?: string }) {
   )
 }
 
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "@/components/ui/sidebar"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
-import { Slider } from "@/components/ui/slider"
-import { Card, CardContent } from "@/components/ui/card"
-import { PlasmidView } from "@/components/plasmid-view"
-import { Badge } from "@/components/ui/badge"
-
 type ControlProps = {
   showLinks: boolean
   onToggleLinks: (value: boolean) => void
   showLabels: boolean
   onToggleLabels: (value: boolean) => void
-  labelType: 'points' | 'clusters'
-  onChangeLabelType: (value: 'points' | 'clusters') => void
+  labelType: "points" | "clusters"
+  onChangeLabelType: (value: "points" | "clusters") => void
   colorBy?: string
   colorOptions: string[]
   columnDisplayNames: Record<string, string>
@@ -164,6 +168,12 @@ type ControlProps = {
   onToggleHideNoMetadata: (value: boolean) => void
   hideIMGPR: boolean
   onToggleHideIMGPR: (value: boolean) => void
+  reversePalette: boolean
+  onToggleReversePalette: (value: boolean) => void
+  continuousPalette: string
+  onChangeContinuousPalette: (value: string) => void
+  selectNeighbors: boolean
+  onToggleSelectNeighbors: (value: boolean) => void
   plasmidId?: string | null
 }
 
@@ -192,82 +202,136 @@ export function AppSidebar({
   onToggleHideNoMetadata,
   hideIMGPR,
   onToggleHideIMGPR,
+  reversePalette,
+  onToggleReversePalette,
+  continuousPalette,
+  onChangeContinuousPalette,
+  selectNeighbors,
+  onToggleSelectNeighbors,
   plasmidId,
   ...props
 }: React.ComponentProps<typeof Sidebar> & ControlProps) {
+  const { setOpenMobile } = useSidebar()
+
   const categoryColors: Record<string, string> = {
     plasmid: "bg-purple-500/20 text-purple-700 dark:text-purple-300",
     mobility: "bg-blue-500/20 text-blue-700 dark:text-blue-300",
     defense: "bg-green-500/20 text-green-700 dark:text-green-300",
-    "PDC": "bg-teal-500/20 text-teal-700 dark:text-teal-300",
+    PDC: "bg-teal-500/20 text-teal-700 dark:text-teal-300",
     "anti-defense": "bg-orange-500/20 text-orange-700 dark:text-orange-300",
-    "AMR": "bg-red-500/20 text-red-700 dark:text-red-300",
-    "MGE": "bg-pink-500/20 text-pink-700 dark:text-pink-300",
+    AMR: "bg-red-500/20 text-red-700 dark:text-red-300",
+    MGE: "bg-pink-500/20 text-pink-700 dark:text-pink-300",
     host: "bg-cyan-500/20 text-cyan-700 dark:text-cyan-300",
     taxonomy: "bg-sky-500/20 text-sky-700 dark:text-sky-300",
     ecosystem: "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300",
     network: "bg-indigo-500/20 text-indigo-700 dark:text-indigo-300",
     metadata: "bg-gray-500/20 text-gray-700 dark:text-gray-300",
   }
-  
+
+  const paletteDisabled = !colorBy || !numericColumns.has(colorBy)
+
+  // Memoize the list of sequential palettes to avoid re-fetching on every render
+  const sequentialPalettes = React.useMemo(() => {
+    const allPalettes = getPalettes({ type: 'sequential' })
+    const uniqueMap = new Map()
+    
+    allPalettes.forEach((p) => {
+      // Just keep the first one encountered for each name, 
+      // or we could pick a specific one (like max classes), but usually names are enough.
+      if (!uniqueMap.has(p.name)) {
+        uniqueMap.set(p.name, p)
+      }
+    })
+
+    return Array.from(uniqueMap.values())
+      .sort((a: any, b: any) => a.name.localeCompare(b.name))
+  }, [])
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader className="px-4 pt-5">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              className="data-[slot=sidebar-menu-button]:!p-2 rounded-xl text-left"
-            >
-              <a href="#" className="flex items-center gap-3">
-                <PlasmidLogo className="h-5 w-5 text-foreground" />
-                <span className="text-base font-semibold tracking-tight">
-                  Plasmid Defense Network
-                </span>
-              </a>
-            </SidebarMenuButton>
+            <div className="flex items-center justify-between w-full pr-2">
+              <SidebarMenuButton
+                asChild
+                className="data-[slot=sidebar-menu-button]:!p-2 rounded-xl text-left flex-1"
+              >
+                <a href="#" className="flex items-center gap-3">
+                  <PlasmidLogo className="h-5 w-5 text-foreground" />
+                  <span className="text-base font-semibold tracking-tight">
+                    Plasmid Defense Network
+                  </span>
+                </a>
+              </SidebarMenuButton>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setOpenMobile(false)}
+                className="md:hidden h-8 px-2 text-muted-foreground hover:text-foreground"
+              >
+                Cerrar
+              </Button>
+            </div>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
+
       <SidebarContent className="flex flex-1 flex-col justify-between pb-6">
         <div className="px-4 text-[0.7rem]">
+          {/* NOTE:
+              Removed "relative z-20" from Card to avoid creating a stacking context
+              that can interfere with Radix portals. */}
           <Card className="border-muted/70 bg-card/70 text-[0.7rem]">
-            <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                    Color by
-                  </div>
-                  <Select
-                    value={colorBy ?? ""}
-                    onValueChange={(v) => onChangeColorBy(v)}
-                    disabled={!colorOptions.length}
-                  >
-                    
-                   <SelectTrigger className="w-full justify-between text-[0.64rem]">
+            <CardContent className="space-y-3">
+              {/* Color by */}
+              <div className="space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  Color by
+                </div>
+                <Select
+                  value={colorBy ?? ""}
+                  onValueChange={(v) => onChangeColorBy(v || undefined)}
+                  disabled={!colorOptions.length}
+                >
+                  <SelectTrigger className="w-full justify-between text-[0.64rem]">
                     <SelectValue
                       placeholder="Choose a column"
                       className="text-[0.6rem]"
                     />
                   </SelectTrigger>
-                  <SelectContent className="min-w-[400px]">
+
+                  {/* z-index to ensure it appears above offcanvas/overlays */}
+                  <SelectContent className="min-w-[400px] z-[1000]" portalled={false}>
                     {colorOptions.map((opt) => {
                       const categories = columnCategories[opt] || []
                       const isNumeric = numericColumns.has(opt)
                       return (
-                        <SelectItem key={opt} value={opt} className="pr-8 cursor-pointer">
+                        <SelectItem
+                          key={opt}
+                          value={opt}
+                          className="pr-8 cursor-pointer"
+                        >
                           <div className="flex items-center justify-between w-full gap-2">
-                            <span className="truncate flex-1 min-w-0">{columnDisplayNames[opt] || opt}</span>
+                            <span className="truncate flex-1 min-w-0">
+                              {columnDisplayNames[opt] || opt}
+                            </span>
                             <div className="flex items-center gap-1 shrink-0">
-                              {categories.length > 0 && categories.map((category) => {
-                                const categoryColor = categoryColors[category] || ""
-                                return (
-                                  <span key={category} className={`px-1.5 py-0.5 text-[0.6rem] rounded-md font-medium whitespace-nowrap ${categoryColor}`}>
-                                    {category}
-                                  </span>
-                                )
-                              })}
-                              <span className={`flex items-center justify-center px-1 h-4 text-[0.5rem] font-bold rounded bg-foreground/15 text-foreground/60`}>
-                                {isNumeric ? '123' : 'ABC'}
+                              {categories.length > 0 &&
+                                categories.map((category) => {
+                                  const categoryColor =
+                                    categoryColors[category] || ""
+                                  return (
+                                    <span
+                                      key={category}
+                                      className={`px-1.5 py-0.5 text-[0.6rem] rounded-md font-medium whitespace-nowrap ${categoryColor}`}
+                                    >
+                                      {category}
+                                    </span>
+                                  )
+                                })}
+                              <span className="flex items-center justify-center px-1 h-4 text-[0.5rem] font-bold rounded bg-foreground/15 text-foreground/60">
+                                {isNumeric ? "123" : "ABC"}
                               </span>
                             </div>
                           </div>
@@ -277,11 +341,90 @@ export function AppSidebar({
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Palette */}
+              <div className="space-y-2">
                 <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                  Visualization Settings
+                  Palette
                 </div>
-                <div className="space-y-3 text-[0.68rem]">
-                  <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                {paletteDisabled && (
+                  <p className="text-[0.6rem] text-muted-foreground mt-[-0.25rem]">
+                    Choose a{" "}
+                    <span className="font-medium">numeric</span> “Color by”
+                    option to enable palettes.
+                  </p>
+                )}
+                <Select
+                  value={continuousPalette ?? ""}
+                  onValueChange={(v) => onChangeContinuousPalette(v)}
+                  disabled={paletteDisabled}
+                >
+                  <SelectTrigger
+                    className={`w-full justify-between text-[0.64rem] ${
+                      paletteDisabled ? "opacity-50" : ""
+                    }`}
+                  >
+                    <SelectValue
+                      placeholder="Select palette"
+                      className="text-[0.6rem]"
+                    />
+                  </SelectTrigger>
+
+                  {/* z-index to ensure it appears above offcanvas/overlays */}
+                  <SelectContent className="z-[1000] max-h-[300px]" portalled={false}>
+                    {sequentialPalettes.map((paletteObj: any) => {
+                        const p = paletteObj.name
+                        // Generate a small preview of 5 colors
+                        const colors = getSequentialColors(p, 5) || []
+                        return (
+                          <SelectItem
+                            key={p}
+                            value={p}
+                            className="pr-8 cursor-pointer"
+                          >
+                            <div className="flex items-center justify-between w-full gap-2">
+                              <span className="truncate flex-1 min-w-0">{p}</span>
+                              <div className="flex h-3 w-16 shrink-0 overflow-hidden rounded bg-gray-100 ring-1 ring-inset ring-black/10">
+                                {colors.map((c, i) => (
+                                  <div
+                                    key={i}
+                                    style={{ backgroundColor: c }}
+                                    className="h-full flex-1"
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          </SelectItem>
+                        )
+                      }
+                    )}
+                  </SelectContent>
+                </Select>
+
+                <div className={`flex items-center justify-between rounded-lg border px-3 py-2 ${paletteDisabled ? "opacity-50" : ""}`}>
+                  <div>
+                    <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
+                      Reverse palette
+                    </div>
+                    <p className="text-[0.6rem] text-muted-foreground">
+                      Flip color direction
+                    </p>
+                  </div>
+                  <Switch
+                    aria-label="Reverse palette"
+                    checked={reversePalette}
+                    onCheckedChange={(v) => onToggleReversePalette(v)}
+                    disabled={paletteDisabled}
+                  />
+                </div>
+              </div>
+
+              <div className="text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                Visualization Settings
+              </div>
+
+              <div className="space-y-2 text-[0.68rem]">
+                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
                   <div>
                     <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
                       Show links
@@ -296,13 +439,14 @@ export function AppSidebar({
                     onCheckedChange={(v) => onToggleLinks(v)}
                   />
                 </div>
+
                 <div className="flex items-center justify-between rounded-lg border px-3 py-2">
                   <div>
                     <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
                       Show labels
                     </div>
                     <p className="text-[0.6rem] text-muted-foreground">
-                      Toggle label visibility
+                      Toggle label visibility (affects performance)
                     </p>
                   </div>
                   <Switch
@@ -311,93 +455,117 @@ export function AppSidebar({
                     onCheckedChange={(v) => onToggleLabels(v)}
                   />
                 </div>
+
+                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                  <div>
+                    <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
+                      Select neighbors
+                    </div>
+                    <p className="text-[0.6rem] text-muted-foreground">
+                      Highlight connected nodes on click
+                    </p>
+                  </div>
+                  <Switch
+                    aria-label="Toggle select neighbors"
+                    checked={selectNeighbors}
+                    onCheckedChange={(v) => onToggleSelectNeighbors(v)}
+                  />
+                </div>
+
                 <div className="flex items-center justify-between rounded-lg border px-3 py-2">
                   <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
                     Label type
                   </div>
                   <div className="flex gap-2">
-                    <Badge 
-                      variant={labelType === 'points' ? 'default' : 'outline'}
+                    <Badge
+                      variant={labelType === "points" ? "default" : "outline"}
                       className="cursor-pointer px-3 py-1 text-[0.68rem] hover:opacity-80 transition-opacity"
-                      onClick={() => onChangeLabelType('points')}
+                      onClick={() => onChangeLabelType("points")}
                     >
                       Node IDs
                     </Badge>
-                    <Badge 
-                      variant={labelType === 'clusters' ? 'default' : 'outline'}
+                    <Badge
+                      variant={labelType === "clusters" ? "default" : "outline"}
                       className="cursor-pointer px-3 py-1 text-[0.68rem] hover:opacity-80 transition-opacity"
-                      onClick={() => onChangeLabelType('clusters')}
+                      onClick={() => onChangeLabelType("clusters")}
                     >
                       PTUs
                     </Badge>
                   </div>
                 </div>
-            <div className="space-y-2 rounded-lg border px-3 py-2">
-              <div className="flex items-center justify-between">
-                <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
-                  Point size
+
+                <div className="space-y-2 rounded-lg border px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
+                      Point size
+                    </div>
+                    <span className="text-[0.6rem] text-muted-foreground">
+                      {pointSize.toFixed(1)}
+                    </span>
+                  </div>
+                  <Slider
+                    min={1}
+                    max={50}
+                    step={0.5}
+                    value={[pointSize]}
+                    onValueChange={([v]) => onChangePointSize(v)}
+                  />
                 </div>
-                <span className="text-[0.6rem] text-muted-foreground">{pointSize.toFixed(1)}</span>
-              </div>
-              <Slider
-                min={1}
-                max={50}
-                step={0.5}
-                value={[pointSize]}
-                onValueChange={([v]) => onChangePointSize(v)}
-              />
-            </div>
-            <div className="space-y-2 rounded-lg border px-3 py-2">
-              <div className="flex items-center justify-between">
-                <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
-                  Link opacity
+
+                <div className="space-y-2 rounded-lg border px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
+                      Link opacity
+                    </div>
+                    <span className="text-[0.6rem] text-muted-foreground">
+                      {linkOpacity.toFixed(2)}
+                    </span>
+                  </div>
+                  <Slider
+                    min={0.05}
+                    max={1}
+                    step={0.05}
+                    value={[linkOpacity]}
+                    onValueChange={([v]) => onChangeLinkOpacity(v)}
+                  />
                 </div>
-                <span className="text-[0.6rem] text-muted-foreground">
-                  {linkOpacity.toFixed(2)}
-                </span>
-              </div>
-              <Slider
-                min={0.05}
-                max={1}
-                step={0.05}
-                value={[linkOpacity]}
-                onValueChange={([v]) => onChangeLinkOpacity(v)}
-              />
-            </div>
-            <div className="space-y-2 rounded-lg border px-3 py-2">
-              <div className="flex items-center justify-between">
-                <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
-                  Point greyout opacity
+
+                <div className="space-y-2 rounded-lg border px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
+                      Point greyout opacity
+                    </div>
+                    <span className="text-[0.6rem] text-muted-foreground">
+                      {pointGreyoutOpacity.toFixed(3)}
+                    </span>
+                  </div>
+                  <Slider
+                    min={0}
+                    max={0.5}
+                    step={0.005}
+                    value={[pointGreyoutOpacity]}
+                    onValueChange={([v]) => onChangePointGreyoutOpacity(v)}
+                  />
                 </div>
-                <span className="text-[0.6rem] text-muted-foreground">
-                  {pointGreyoutOpacity.toFixed(3)}
-                </span>
-              </div>
-              <Slider
-                min={0}
-                max={0.5}
-                step={0.005}
-                value={[pointGreyoutOpacity]}
-                onValueChange={([v]) => onChangePointGreyoutOpacity(v)}
-              />
-            </div>
-            <div className="space-y-2 rounded-lg border px-3 py-2">
-              <div className="flex items-center justify-between">
-                <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
-                  Link greyout opacity
+
+                <div className="space-y-2 rounded-lg border px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
+                      Link greyout opacity
+                    </div>
+                    <span className="text-[0.6rem] text-muted-foreground">
+                      {linkGreyoutOpacity.toFixed(3)}
+                    </span>
+                  </div>
+                  <Slider
+                    min={0}
+                    max={0.5}
+                    step={0.005}
+                    value={[linkGreyoutOpacity]}
+                    onValueChange={([v]) => onChangeLinkGreyoutOpacity(v)}
+                  />
                 </div>
-                <span className="text-[0.6rem] text-muted-foreground">
-                  {linkGreyoutOpacity.toFixed(3)}
-                </span>
-              </div>
-              <Slider
-                min={0}
-                max={0.5}
-                step={0.005}
-                value={[linkGreyoutOpacity]}
-                onValueChange={([v]) => onChangeLinkGreyoutOpacity(v)}
-              />
-            </div>
+
                 <div className="flex items-center justify-between rounded-lg border px-3 py-2">
                   <div>
                     <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
@@ -414,6 +582,7 @@ export function AppSidebar({
                     disabled={!colorBy}
                   />
                 </div>
+
                 <div className="flex items-center justify-between rounded-lg border px-3 py-2">
                   <div>
                     <div className="text-[0.64rem] font-semibold tracking-wide uppercase">
@@ -429,12 +598,16 @@ export function AppSidebar({
                     onCheckedChange={(v) => onToggleHideIMGPR(v)}
                   />
                 </div>
-          </div>
-        </CardContent>
-      </Card>
+
+
+              </div>
+            </CardContent>
+          </Card>
+
           <PlasmidView plasmidId={plasmidId} className="mt-4" />
         </div>
       </SidebarContent>
+
       <SidebarFooter className="hidden" />
     </Sidebar>
   )

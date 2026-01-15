@@ -15,6 +15,8 @@ import { useTheme } from "next-themes"
 import iwanthue from "iwanthue"
 import { getSequentialColors } from "dicopal"
 import { sql, and, isNotNull, column } from "@uwdata/mosaic-sql"
+import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react"
+import { Button } from "@/components/ui/button"
 
 const BASE_URL = import.meta.env.BASE_URL
 
@@ -32,26 +34,28 @@ const DEFAULT_CONFIG: CosmographConfig = {
   focusPointOnLabelClick: true,
   showHoveredPointLabel: false,
   pointSizeStrategy: "single",
-  pointDefaultSize: 10,
+  pointDefaultSize: 15,
   linkWidthStrategy: "single",
   linkDefaultWidth: 0.8,
   pointSizeScale: 10,
-  pointGreyoutOpacity: 0.01,
+  pointGreyoutOpacity: 0.2,
   enableSimulation: false,
   curvedLinks: false,
   pointOpacity: 0.7,
   scalePointsOnZoom: true,
   showFPSMonitor: false,
-  linkGreyoutOpacity: 0.005,
+  linkGreyoutOpacity: 0.1,
   linkOpacity: 0.15,
   showClusterLabels: false,
   usePointColorStrategyForClusterLabels: false,
 }
 
 const DARK_BG: [number, number, number, number] = [18, 19, 20, 1]
-const LIGHT_BG: [number, number, number, number] = [247, 247, 247, 1]
+const LIGHT_BG: [number, number, number, number] = [255, 255, 255, 1]
 const DARK_LINK: [number, number, number, number] = [255, 255, 255, 0.28]
 const LIGHT_LINK: [number, number, number, number] = [15, 23, 42, 0.28]
+const DARK_LASSO = "#ffffffe6"  // white with 90% opacity
+const LIGHT_LASSO = "#0f172ae6"  // dark slate with 90% opacity
 
 const SPINNER_CX = 125
 const SPINNER_CY = 125
@@ -205,8 +209,11 @@ export function NetworkCosmograph({
   linkOpacity,
   pointGreyoutOpacity,
   linkGreyoutOpacity,
-  hideNoMetadata,
-  hideIMGPR,
+  hideNoMetadata = false,
+  hideIMGPR = false,
+  reversePalette = false,
+  continuousPalette = "BlueFluorite",
+  selectNeighbors,
   onColorOptions,
   onColorByResolved,
   onColumnDisplayNames,
@@ -230,6 +237,9 @@ export function NetworkCosmograph({
   linkGreyoutOpacity?: number
   hideNoMetadata?: boolean
   hideIMGPR?: boolean
+  reversePalette?: boolean
+  continuousPalette?: string
+  selectNeighbors: boolean
   onColorOptions?: (options: string[]) => void
   onColorByResolved?: (value: string | undefined) => void
   onColumnDisplayNames?: (names: Record<string, string>) => void
@@ -247,6 +257,7 @@ export function NetworkCosmograph({
     totalRows: number
   ) => void
 }) {
+  const [legendCollapsed, setLegendCollapsed] = React.useState(false)
   const initialThemeIsDark =
     typeof document !== "undefined"
       ? document.documentElement.classList.contains("dark") ||
@@ -345,6 +356,10 @@ export function NetworkCosmograph({
     () => (isDark ? [100, 100, 100, 0.28] : [145, 143, 142, 0.28]),
     [isDark]
   )
+  const lassoStrokeColor = React.useMemo<string>(
+    () => (isDark ? DARK_LASSO : LIGHT_LASSO),
+    [isDark]
+  )
   const clusterLabelColor = React.useMemo<[number, number, number, number]>(
     () => (isDark ? [255, 255, 255, 1] : [0, 0, 0, 1]),
     [isDark]
@@ -393,11 +408,18 @@ export function NetworkCosmograph({
       ...prev,
       backgroundColor,
       pointDefaultSize: pointSize ?? prev.pointDefaultSize,
-      linkOpacity: linkOpacity ?? prev.linkOpacity,
+      linkOpacity: showLinks ? (linkOpacity ?? prev.linkOpacity) : 0,
       pointGreyoutOpacity: pointGreyoutOpacity ?? prev.pointGreyoutOpacity,
       linkGreyoutOpacity: linkGreyoutOpacity ?? prev.linkGreyoutOpacity,
+      selectPointOnClick: selectNeighbors ? true : 'single',
+      // Lasso selection styling
+      polygonalSelectorStrokeColor: lassoStrokeColor,
+      // Navigation performance optimizations
+      pixelRatio: window.devicePixelRatio > 1.5 ? 1.5 : 1, // Cap pixel ratio to 1.5 for performance
+      scalePointsOnZoom: true,
+      scalePointLabelsOnZoom: true,
     }))
-  }, [backgroundColor, pointSize, linkOpacity, pointGreyoutOpacity, linkGreyoutOpacity])
+  }, [backgroundColor, pointSize, linkOpacity, pointGreyoutOpacity, linkGreyoutOpacity, showLinks, selectNeighbors, lassoStrokeColor])
 
   React.useEffect(() => {
     setConfig((prev) => ({
@@ -426,11 +448,11 @@ export function NetworkCosmograph({
 
   
   React.useEffect(() => {
-    const cg = cosmographRef.current as any
+    const cg = cosmographRef.current as CosmographRef | null
     if (!cg) return
     
-    
-    const selection = cg.pointsSelection
+    // @ts-ignore - pointsSelection is not in the type definition but exists on the instance
+    const selection = (cg as any).pointsSelection
     if (!selection) {
       console.log('[Filter] pointsSelection not available yet')
       return
@@ -458,7 +480,7 @@ export function NetworkCosmograph({
         const filterClause = {
           source: filterSourceRef.current,
           value: { hideNoMetadata, hideIMGPR, colorBy },
-          predicate,
+          predicate: predicate as any,
         }
         selection.update(filterClause)
       } catch (err) {
@@ -563,7 +585,7 @@ export function NetworkCosmograph({
   React.useEffect(() => {
     if (!hasData) return
     if (!Array.isArray(selectedPointIndices)) return
-    const cg = cosmographRef.current as any
+    const cg = cosmographRef.current as CosmographRef | null
     if (!cg) return
 
     if (selectionFromCosmographRef.current) {
@@ -578,8 +600,9 @@ export function NetworkCosmograph({
 
     const applySelection = async () => {
       try {
-        await cg.dataUploaded?.()
+        await (cg as any).dataUploaded?.()
       } catch {
+        // Data might not be uploaded yet, which is fine
       }
       if (!cg?.selectPoints) {
         applyingExternalSelectionRef.current = false
@@ -815,7 +838,10 @@ export function NetworkCosmograph({
       palette: string[],
       strategy: "categorical" | "continuous"
     ) => {
-      paletteCacheRef.current.set(colorBy, { palette, strategy })
+      // NOTE: We do NOT update the cache here anymore, because we don't want to cache 
+      // the reversed version of a palette as the "source of truth".
+      // Cache management should be done explicitly when generating/loading base palettes.
+      
       setCurrentColorStrategy(strategy)
       setConfig((prev) => {
         if (
@@ -832,28 +858,47 @@ export function NetworkCosmograph({
       })
     }
 
-    const cached = paletteCacheRef.current.get(colorBy)
-    if (cached) {
-      applyPalette(cached.palette, cached.strategy)
-      return
-    }
-
     const summaryEntry = findColumnSummary(
       (cg as any)?.stats?.pointsSummary,
       colorBy
     )
     const columnType = getColumnType(summaryEntry)
-    const approxUnique = getApproxUnique(summaryEntry)
-
-    
+    // Check if numeric first
     if (numericColumns.has(colorBy) || isNumericType(columnType)) {
-      const palette = getSequentialColors("Viridis", 9)
-      if (palette) {
-        applyPalette(palette, "continuous")
+      // For numeric columns, we prioritize the user-selected `continuousPalette`.
+      // Usage of `paletteCacheRef` here was converting "custom file palettes" into 
+      // static things that ignored the dropdown.
+      
+      let basePalette = getSequentialColors(continuousPalette, 9)
+      
+      // Fallback to BlueFluorite if the selected one fails for some reason
+      if (!basePalette) {
+        basePalette = getSequentialColors("BlueFluorite", 9)
+      }
+      
+      if (basePalette) {
+        const finalPalette = [...basePalette]
+        // Default behavior (reversePalette=false) is to REVERSE the sequential palette 
+        // because BlueFluorite etc. are often light-to-dark or vice versa in a way 
+        // that matches previous default when reversed.
+        // If reversePalette=true, we use it as-is (unreversed relative to default).
+        if (!reversePalette) {
+             finalPalette.reverse()
+        }
+        applyPalette(finalPalette, "continuous")
       }
       return
     }
 
+    // specific check for categorical cache
+    const cached = paletteCacheRef.current.get(colorBy)
+    if (cached) {
+      applyPalette(cached.palette, cached.strategy)
+      return
+    }
+    
+    // Fallback: Generate categorical palette using iwanthue
+    const approxUnique = getApproxUnique(summaryEntry)
     const palette = iwanthue(clampPaletteSize(approxUnique), {
       seed: colorBy,
       clustering: "k-means",
@@ -868,8 +913,11 @@ export function NetworkCosmograph({
         lmax: 80,
       },
     })
+    
+    // Check if we should cache this result (yes, for iwanthue it is expensive)
+    paletteCacheRef.current.set(colorBy, { palette, strategy: "categorical" })
     applyPalette(palette, "categorical")
-  }, [config.pointColorBy])
+  }, [config.pointColorBy, reversePalette, continuousPalette])
 
   React.useEffect(() => {
     const loadPrepared = async () => {
@@ -889,7 +937,6 @@ export function NetworkCosmograph({
 
         const providedColor =
           colorBy && colorBy.length > 0 ? colorBy : undefined
-        let resolvedColor: string | undefined
         const optionList: string[] = []
         const optionsSet = new Set<string>()
         const excludeFromColorBy = new Set<string>(configJson.pointExcludeFromColorBy || [])
@@ -920,7 +967,7 @@ export function NetworkCosmograph({
           optionList[0] ??
           config.pointColorBy
 
-        resolvedColor = defaultColorBy
+        const resolvedColor = defaultColorBy
 
         
         const iwanthueOptions = {
@@ -1297,10 +1344,26 @@ export function NetworkCosmograph({
           )}
           <div
             ref={legendRef}
-            className="cosmograph-legend"
+            className={`cosmograph-legend transition-all duration-300 ${legendCollapsed ? 'cosmograph-legend--collapsed' : ''}`}
             style={{ ...legendStyles, color: legendText }}
           >
-              <CosmographSizeLegend ref={sizeLegendRef} style={{ display: "none" }} />
+            <div className={`flex items-center justify-between ${legendCollapsed ? '' : 'mb-1 pb-1 border-b'}`} style={{ borderColor: legendText + '20' }}>
+              <span className="text-[0.65rem] font-bold uppercase tracking-wider opacity-60">
+                Legend
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setLegendCollapsed(!legendCollapsed)}
+                className="h-5 w-5 hover:bg-transparent"
+                style={{ color: legendText }}
+              >
+                {legendCollapsed ? <IconChevronRight className="size-3" /> : <IconChevronLeft className="size-3" />}
+              </Button>
+            </div>
+            {!legendCollapsed && (
+              <>
+                <CosmographSizeLegend ref={sizeLegendRef} style={{ display: "none" }} />
             {currentColorStrategy === "continuous" && baseColorColumn && numericColumns.has(baseColorColumn) && (
               <div className="flex items-center gap-2 pb-2 text-xs border-b" style={{ borderColor: legendText + '20' }}>
                 <span className="opacity-70">Scale:</span>
@@ -1348,9 +1411,8 @@ export function NetworkCosmograph({
                 {legendSortBy === "count" ? "By Size" : "Alphabetical"}
               </button>
             </div>
-            {error && (
-              <span className="text-xs text-rose-300">Error: {error}</span>
-            )}
+          </>
+        )}
           </div>
           <CosmographPopup
             content={hoveredContent}
@@ -1368,7 +1430,6 @@ export function NetworkCosmograph({
               componentsDisplayStateMode={false}
               points={dataFiles.points}
               links={dataFiles.links}
-              renderLinks={showLinks}
               pointIdBy="id"
               pointIndexBy="idx"
               linkSourceBy="source"

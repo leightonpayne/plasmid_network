@@ -179,7 +179,6 @@ body,
   backdrop-filter: blur(6px);
 }
 
-
 .plasmid-tooltip__title {
   font-weight: 600;
   font-size: 0.75rem;
@@ -251,7 +250,7 @@ body,
 }
 
 .gdg-wrapper ::-webkit-scrollbar-thumb {
-  background: var(--sidebar-border); 
+  background: var(--sidebar-border);
   border-radius: 99px;
   border: 2px solid var(--background); /* Efecto de padding */
 }
@@ -275,7 +274,28 @@ body,
   flex-direction: column;
   pointer-events: auto;
   z-index: 10;
-  transition: width 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: var(--cosmograph-ui-background);
+  backdrop-filter: blur(8px);
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid
+    color-mix(in srgb, var(--cosmograph-ui-text), transparent 90%);
+}
+
+.cosmograph-legend--collapsed {
+  width: 90px !important;
+  min-width: 90px !important;
+  padding: 8px !important;
+}
+
+@media (max-width: 768px) {
+  .cosmograph-legend {
+    bottom: auto;
+    top: 5rem;
+    left: 1.25rem;
+    max-height: 40vh;
+  }
 }
 
 /* Override internal Cosmograph legend widths */
@@ -314,4 +334,18 @@ body,
   max-width: none !important;
   width: auto !important;
   display: inline-block !important;
+}
+
+/* Increase touch targets for buttons on small screens */
+@media (pointer: coarse) {
+  button,
+  [role="button"],
+  .select-trigger {
+    min-height: 44px;
+  }
+
+  .slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
 }

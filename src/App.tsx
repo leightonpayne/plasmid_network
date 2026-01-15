@@ -5,6 +5,7 @@ import { NetworkCosmograph } from "@/components/network-cosmograph"
 import { NodeDataTable } from "@/components/node-data-table"
 import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { SidebarInset, SidebarProvider, useSidebar } from "@/components/ui/sidebar"
 import {
   IconChevronLeft,
@@ -76,23 +77,34 @@ function getCellValue(
   if (!dataSource || rowIndex === null || rowIndex === undefined || rowIndex < 0) {
     return undefined
   }
-  const source = dataSource as any
-  if (typeof source.getChild === "function") {
+  
+  // Try treating as a data source with getChild (like Arrow/Mosaic)
+  if (dataSource && typeof dataSource === "object" && "getChild" in dataSource && typeof (dataSource as { getChild: unknown }).getChild === "function") {
+    const source = dataSource as { getChild: (col: string) => { get?: (idx: number) => unknown } | undefined }
     const col = source.getChild(column)
     if (col?.get) return col.get(rowIndex)
   }
-  if (typeof source.get === "function") {
+
+  // Try treating as a data source with get (like some Mosaic structures)
+  if (dataSource && typeof dataSource === "object" && "get" in dataSource && typeof (dataSource as { get: unknown }).get === "function") {
+    const source = dataSource as { get: (idx: number) => Record<string, unknown> | undefined }
     const row = source.get(rowIndex)
     if (row && column in row) return row[column]
   }
-  if (Array.isArray(source)) {
-    const row = source[rowIndex]
-    return row ? row[column] : undefined
+
+  // Try treating as an array
+  if (Array.isArray(dataSource)) {
+    const row = dataSource[rowIndex]
+    return row && typeof row === "object" && column in row ? (row as Record<string, unknown>)[column] : undefined
   }
-  if (typeof (source as any).at === "function") {
-    const row = (source as any).at(rowIndex)
+
+  // Try treating as a data source with at (like Arrow tables)
+  if (dataSource && typeof dataSource === "object" && "at" in dataSource && typeof (dataSource as { at: unknown }).at === "function") {
+    const source = dataSource as { at: (idx: number) => Record<string, unknown> | undefined }
+    const row = source.at(rowIndex)
     if (row && column in row) return row[column]
   }
+
   return undefined
 }
 
@@ -119,71 +131,102 @@ function SidebarToggleFab({
 
   return (
     <div className="absolute left-5 top-5 z-50 flex items-center gap-2">
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={toggleSidebar}
-        className="h-8 w-8 rounded-md border-border bg-transparent text-foreground shadow-none"
-        aria-label={open ? "Cerrar sidebar" : "Abrir sidebar"}
-      >
-        <Icon className="!size-4" />
-      </Button>
-      <Button
-        variant={tableOpen ? "default" : "outline"}
-        size="icon"
-        onClick={onToggleTable}
-        className={`h-8 w-8 rounded-md shadow-none ${
-          tableOpen
-            ? "bg-primary text-primary-foreground"
-            : "border-border bg-transparent text-foreground"
-        }`}
-        aria-pressed={tableOpen}
-        aria-label={tableOpen ? "Ocultar tabla" : "Mostrar tabla"}
-      >
-        <IconTable className="!size-4" />
-      </Button>
-      <Button
-        variant={polygonSelectionActive ? "default" : "outline"}
-        size="icon"
-        onClick={onTogglePolygonSelection}
-        className={`h-8 w-8 rounded-md shadow-none ${
-          polygonSelectionActive ? "bg-primary text-primary-foreground" : "border-border bg-transparent text-foreground"
-        }`}
-        aria-pressed={polygonSelectionActive}
-        aria-label={polygonSelectionActive ? "Desactivar selección poligonal" : "Activar selección poligonal"}
-      >
-        <IconPolygon className="!size-4" />
-      </Button>
-      <Button
-        variant="outline"
-        size="icon"
-        onClick={() => setTheme(isDark ? "light" : "dark")}
-        className="h-8 w-8 rounded-md border-border bg-transparent text-foreground shadow-none"
-        aria-label={isDark ? "Activar modo claro" : "Activar modo oscuro"}
-        disabled={!mounted}
-      >
-        {isDark ? <IconSun className="!size-4" /> : <IconMoon className="!size-4" />}
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={toggleSidebar}
+            className="h-8 w-8 rounded-md border-border bg-transparent text-foreground shadow-none"
+            aria-label={open ? "Close sidebar" : "Open sidebar"}
+          >
+            <Icon className="size-4!" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          {open ? "Close sidebar" : "Open sidebar"}
+        </TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant={tableOpen ? "default" : "outline"}
+            size="icon"
+            onClick={onToggleTable}
+            className={`h-8 w-8 rounded-md shadow-none ${
+              tableOpen
+                ? "bg-primary text-primary-foreground"
+                : "border-border bg-transparent text-foreground"
+            }`}
+            aria-pressed={tableOpen}
+            aria-label={tableOpen ? "Hide data table" : "Show data table"}
+          >
+            <IconTable className="size-4!" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          {tableOpen ? "Hide data table" : "Show data table"}
+        </TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant={polygonSelectionActive ? "default" : "outline"}
+            size="icon"
+            onClick={onTogglePolygonSelection}
+            className={`h-8 w-8 rounded-md shadow-none ${
+              polygonSelectionActive ? "bg-primary text-primary-foreground" : "border-border bg-transparent text-foreground"
+            }`}
+            aria-pressed={polygonSelectionActive}
+            aria-label={polygonSelectionActive ? "Disable lasso selection" : "Enable lasso selection"}
+          >
+            <IconPolygon className="size-4!" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          {polygonSelectionActive ? "Disable lasso selection" : "Enable lasso selection"}
+        </TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setTheme(isDark ? "light" : "dark")}
+            className="h-8 w-8 rounded-md border-border bg-transparent text-foreground shadow-none"
+            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            disabled={!mounted}
+          >
+            {isDark ? <IconSun className="size-4!" /> : <IconMoon className="size-4!" />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          {isDark ? "Switch to light mode" : "Switch to dark mode"}
+        </TooltipContent>
+      </Tooltip>
     </div>
   )
 }
 
 function App() {
-  const [showLinks, setShowLinks] = React.useState(true)
-  const [showLabels, setShowLabels] = React.useState(true)
+  const [showLinks, setShowLinks] = React.useState(false)
+  const [showLabels, setShowLabels] = React.useState(false)
   const [labelType, setLabelType] = React.useState<'points' | 'clusters'>('clusters')
   const [colorBy, setColorBy] = React.useState<string>("")
   const [colorOptions, setColorOptions] = React.useState<string[]>([])
   const [columnDisplayNames, setColumnDisplayNames] = React.useState<Record<string, string>>({})
   const [columnCategories, setColumnCategories] = React.useState<Record<string, string[]>>({})
   const [numericColumns, setNumericColumns] = React.useState<Set<string>>(new Set())
-  const [pointSize, setPointSize] = React.useState<number>(10)
+  const [pointSize, setPointSize] = React.useState<number>(15)
   const [linkOpacity, setLinkOpacity] = React.useState<number>(0.15)
-  const [pointGreyoutOpacity, setPointGreyoutOpacity] = React.useState<number>(0.01)
-  const [linkGreyoutOpacity, setLinkGreyoutOpacity] = React.useState<number>(0.005)
+  const [pointGreyoutOpacity, setPointGreyoutOpacity] = React.useState<number>(0.2)
+  const [linkGreyoutOpacity, setLinkGreyoutOpacity] = React.useState<number>(0.1)
   const [hideNoMetadata, setHideNoMetadata] = React.useState(false)
   const [hideIMGPR, setHideIMGPR] = React.useState(false)
+  const [reversePalette, setReversePalette] = React.useState(false)
+  const [continuousPalette, setContinuousPalette] = React.useState<string>("BlueFluorite")
   const [tableOpen, setTableOpen] = React.useState(false)
+  const [selectNeighbors, setSelectNeighbors] = React.useState(false)
   const [polygonSelectionActive, setPolygonSelectionActive] = React.useState(false)
   const [showOnlySelectedRows, setShowOnlySelectedRows] = React.useState(false)
   const [tableData, setTableData] = React.useState<unknown>(null)
@@ -195,6 +238,7 @@ function App() {
   const [focusedRowIndex, setFocusedRowIndex] = React.useState<number | null>(null)
   const [focusTrigger, setFocusTrigger] = React.useState(0)
   const [indexReady, setIndexReady] = React.useState(false)
+  const [isPending, startTransition] = React.useTransition()
   const [loadMessage, setLoadMessage] = React.useState("Loading data")
   const selectedPlasmidId = React.useMemo(() => {
     if (primarySelectedIndex !== null && tableData && tableColumns.includes("id")) {
@@ -228,8 +272,6 @@ function App() {
   const togglePolygonSelection = React.useCallback(() => {
     setPolygonSelectionActive((prev) => !prev)
   }, [])
-
-  const [, startTransition] = React.useTransition()
 
   
   const hadSelectionRef = React.useRef(false)
@@ -299,9 +341,9 @@ function App() {
       <AppSidebar
         variant="inset"
         showLinks={showLinks}
-        onToggleLinks={setShowLinks}
+        onToggleLinks={(v) => startTransition(() => setShowLinks(v))}
         showLabels={showLabels}
-        onToggleLabels={setShowLabels}
+        onToggleLabels={(v) => startTransition(() => setShowLabels(v))}
         labelType={labelType}
         onChangeLabelType={setLabelType}
         colorBy={colorBy}
@@ -309,19 +351,25 @@ function App() {
         columnDisplayNames={columnDisplayNames}
         columnCategories={columnCategories}
         numericColumns={numericColumns}
-        onChangeColorBy={(v) => setColorBy(v ?? "")}
+        onChangeColorBy={(v) => startTransition(() => setColorBy(v ?? ""))}
         pointSize={pointSize}
-        onChangePointSize={setPointSize}
+        onChangePointSize={(v) => startTransition(() => setPointSize(v))}
         linkOpacity={linkOpacity}
-        onChangeLinkOpacity={setLinkOpacity}
+        onChangeLinkOpacity={(v) => startTransition(() => setLinkOpacity(v))}
         pointGreyoutOpacity={pointGreyoutOpacity}
-        onChangePointGreyoutOpacity={setPointGreyoutOpacity}
+        onChangePointGreyoutOpacity={(v) => startTransition(() => setPointGreyoutOpacity(v))}
         linkGreyoutOpacity={linkGreyoutOpacity}
-        onChangeLinkGreyoutOpacity={setLinkGreyoutOpacity}
+        onChangeLinkGreyoutOpacity={(v) => startTransition(() => setLinkGreyoutOpacity(v))}
         hideNoMetadata={hideNoMetadata}
         onToggleHideNoMetadata={setHideNoMetadata}
         hideIMGPR={hideIMGPR}
         onToggleHideIMGPR={setHideIMGPR}
+        reversePalette={reversePalette}
+        onToggleReversePalette={setReversePalette}
+        continuousPalette={continuousPalette}
+        onChangeContinuousPalette={setContinuousPalette}
+        selectNeighbors={selectNeighbors}
+        onToggleSelectNeighbors={(v) => startTransition(() => setSelectNeighbors(v))}
         plasmidId={selectedPlasmidId}
       />
       <SidebarInset className="relative flex h-full min-h-0 flex-1 overflow-hidden md:peer-data-[variant=inset]:m-0 md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none">
@@ -335,7 +383,7 @@ function App() {
           <div className="relative flex h-full w-full overflow-hidden rounded-xl border border-border/60 bg-card/50">
             <div
               className={`relative h-full w-full transition-opacity duration-300 ${
-                dataReady ? "opacity-100" : "opacity-0 pointer-events-none"
+                !dataReady ? "opacity-0 pointer-events-none" : isPending ? "opacity-50 grayscale-50%" : "opacity-100"
               }`}
             >
               <NetworkCosmograph
@@ -349,6 +397,9 @@ function App() {
                 linkGreyoutOpacity={linkGreyoutOpacity}
                 hideNoMetadata={hideNoMetadata}
                 hideIMGPR={hideIMGPR}
+                reversePalette={reversePalette}
+                continuousPalette={continuousPalette}
+                selectNeighbors={selectNeighbors}
                 onColorOptions={(opts) => setColorOptions(opts)}
                 onColorByResolved={(value) =>
                   setColorBy((prev) =>
