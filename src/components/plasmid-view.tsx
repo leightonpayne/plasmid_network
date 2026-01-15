@@ -45,17 +45,16 @@ type PlasmidData = {
 const REMOTE_BASE =
   "https://raw.githubusercontent.com/pentamorfico/plsdb_imgpr_json/refs/heads/master/"
 const MIN_RADIUS = 110
-const BASE_TRACK_HEIGHT = 1.5
+const BASE_TRACK_HEIGHT = 3.5
 const REGION_TRACK_OFFSET = 2
-const REGION_TRACK_HEIGHT = 10
+const REGION_TRACK_HEIGHT = 12
 
 
 function getTrackHeight(radius: number): number {
-  
-  const scaleFactor = radius / 200 
+  const scaleFactor = radius / 200
   const scaledHeight = BASE_TRACK_HEIGHT * scaleFactor
   
-  return Math.max(6, Math.min(18, scaledHeight))
+  return Math.max(10, Math.min(28, scaledHeight))
 }
 
 function buildRemoteUrl(plasmidId: string) {
@@ -222,37 +221,75 @@ function drawRuler(
   container: d3.Selection<SVGGElement, unknown, null, undefined>,
   scale: d3.ScaleLinear<number, number>,
   radius: number,
-  zoomFactor: number
+  seqLength: number
 ) {
-  const tickCount = Math.max(6, Math.floor(18 * zoomFactor))
-  const ticks = scale.ticks(tickCount)
+  // Calculate a nice interval based on sequence length
+  const targetTickCount = 8
+  const rawInterval = seqLength / targetTickCount
+  
+  // Round to nice intervals (1k, 2k, 5k, 10k, 20k, 50k, 100k, etc.)
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawInterval)))
+  const normalized = rawInterval / magnitude
+  let niceMultiplier: number
+  if (normalized <= 1) niceMultiplier = 1
+  else if (normalized <= 2) niceMultiplier = 2
+  else if (normalized <= 5) niceMultiplier = 5
+  else niceMultiplier = 10
+  const interval = niceMultiplier * magnitude
+  
+  // Generate tick positions at nice intervals
+  const ticks: number[] = []
+  for (let pos = 0; pos < seqLength; pos += interval) {
+    ticks.push(Math.round(pos))
+  }
+  
   const gRuler = container.append("g").attr("class", "ruler")
+  
+  // Draw tick lines
   gRuler
     .selectAll("line")
     .data(ticks)
     .enter()
     .append("line")
-    .attr("stroke", "#cbd5e1")
-    .attr("transform", (d) => `rotate(${(scale(d) * 180) / Math.PI - 180})`)
+    .attr("stroke", "#94a3b8")
+    .attr("stroke-width", 1.5)
+    .attr("transform", (d) => `rotate(${(scale(d) * 180) / Math.PI})`)
     .attr("y1", -radius)
-    .attr("y2", -(radius + 5))
+    .attr("y2", -(radius + 8))
 
-  const pxSpace = (2 * Math.PI * radius) / tickCount
-  if (pxSpace > 32) {
+  // Check if there's enough space for labels
+  const circumference = 2 * Math.PI * radius
+  const pxPerTick = circumference / ticks.length
+  
+  if (pxPerTick > 40) {
+    const labelOffset = 12 // gap between tick end and label
+    
     gRuler
       .selectAll("text")
-      .data(ticks.filter((_, i: number) => i % 2 === 0))
+      .data(ticks)
       .enter()
       .append("text")
       .attr("text-anchor", "middle")
-      .style("font-size", "9px")
-      .style("fill", "#94a3b8")
+      .attr("dominant-baseline", (d) => {
+        const a = (scale(d) * 180) / Math.PI
+        // For flipped labels (bottom half), use "hanging" so text hangs down from baseline
+        // For normal labels (top half), use "auto" so text sits above baseline
+        return a > 90 && a < 270 ? "hanging" : "auto"
+      })
+      .style("font-size", "10px")
+      .style("font-weight", "500")
+      .style("fill", "#64748b")
       .attr("transform", (d) => {
         const a = (scale(d) * 180) / Math.PI
-        return `rotate(${a}) ${a > 90 && a < 270 ? `rotate(180,0,-${radius + 13})` : ""}`
+        const isFlipped = a > 90 && a < 270
+        if (isFlipped) {
+          // For bottom half: flip the text and position it properly
+          return `rotate(${a}) rotate(180,0,-${radius + 8 + labelOffset})`
+        }
+        return `rotate(${a})`
       })
-      .attr("y", -(radius + 13))
-      .text((d) => (d >= 1000 ? `${Math.round(d / 1000)}k` : d))
+      .attr("y", -(radius + 8 + labelOffset))
+      .text((d) => (d >= 1000 ? `${Math.round(d / 1000)}k` : d === 0 ? "0" : d))
   }
 }
 
@@ -368,7 +405,7 @@ export function PlasmidView({
         .attr("stroke-width", trackHeight * 2.1)
         .attr("opacity", 0.6)
 
-      drawRuler(group, scale, rActual + trackHeight + 10, zoomK)
+      drawRuler(group, scale, rActual + trackHeight + 10, totalLen)
 
       const cds = plasmid.features.filter((f) => f.type === "CDS")
       const regions = plasmid.features.filter((f) => f.type !== "CDS")
@@ -385,8 +422,8 @@ export function PlasmidView({
           return arrowPath(d, scale, rIn, rOut)
         })
         .attr("fill", (d) => getColor(plasmid.legend, d.legend))
-        .attr("stroke", "white")
-        .attr("stroke-width", 0.4)
+        .attr("stroke", "black")
+        .attr("stroke-width", 0.5)
         .on("pointerover", (event: PointerEvent, d: Feature) => {
           const target = event.currentTarget as SVGPathElement | null
           if (target) d3.select(target).attr("opacity", 0.8)
@@ -500,7 +537,7 @@ export function PlasmidView({
 
     const zoom = d3
       .zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.5, 200])
+      .scaleExtent([0.15, 200])
       .on("zoom", (event) => {
         transformRef.current = event.transform
         if (gContentRef.current) {
@@ -601,7 +638,7 @@ export function PlasmidView({
     
     // Get the actual viewBox dimensions to preserve aspect ratio
     const { width: vbWidth, height: vbHeight } = dimensionsRef.current
-    const maxDimension = 2400
+    const maxDimension = 7200
     const aspectRatio = vbWidth / vbHeight
     
     // Calculate canvas dimensions preserving aspect ratio
