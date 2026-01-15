@@ -2,7 +2,7 @@
 
 [![Launch App](https://img.shields.io/badge/Launch_App-3b82f6?style=for-the-badge&logo=rocket&logoColor=white)](https://leightonpayne.github.io/plasmid_network/)
 
-An interactive web application for exploring the global plasmidome and visualizing the distribution of defense systems, antimicrobial resistance (AMR) genes, and anti-defense systems across bacterial plasmids.
+An interactive web application for exploring the global plasmidome and visualizing the distribution of defense systems, anti-defenses, and many other features.
 
 If you use this data or tool in your research, please cite:
 
