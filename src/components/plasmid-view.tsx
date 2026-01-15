@@ -6,6 +6,7 @@ import {
   IconCircleCheck,
   IconDownload,
   IconMoodEmpty,
+  IconPhoto,
   IconRefresh,
   IconMaximize,
   IconMinimize,
@@ -15,6 +16,11 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 type LegendItem = {
@@ -277,6 +283,7 @@ function drawRuler(
         return a > 90 && a < 270 ? "hanging" : "auto"
       })
       .style("font-size", "10px")
+      .style("font-family", "Helvetica, Arial, sans-serif")
       .style("font-weight", "500")
       .style("fill", "#64748b")
       .attr("transform", (d) => {
@@ -305,7 +312,7 @@ function featureLabel(feature: Feature) {
   return name
 }
 
-function Tooltip({ innerRef }: { innerRef: React.RefObject<HTMLDivElement | null> }) {
+function FeatureTooltip({ innerRef }: { innerRef: React.RefObject<HTMLDivElement | null> }) {
   return (
     <div
       ref={innerRef}
@@ -321,7 +328,7 @@ export function PlasmidView({
   plasmidId?: string | null
   className?: string
 }) {
-  const [status, setStatus] = React.useState<"idle" | "loading" | "ready" | "error">("idle")
+  const [status, setStatus] = React.useState<"idle" | "loading" | "loaded" | "error">("idle")
   const [error, setError] = React.useState<string | null>(null)
   const [data, setData] = React.useState<PlasmidData | null>(null)
   const [gcVisible, setGcVisible] = React.useState(true)
@@ -492,6 +499,7 @@ export function PlasmidView({
           .attr("dx", isRight ? 4 : -4)
           .attr("dy", 4)
           .style("font-weight", "600")
+          .style("font-family", "Helvetica, Arial, sans-serif")
           .style("font-size", "11px")
           .style("fill", col)
           .text(featureLabel(d).slice(0, 36))
@@ -502,7 +510,7 @@ export function PlasmidView({
 
   React.useEffect(() => {
     dataRef.current = data
-    if (data && status === "ready") {
+    if (data && status === "loaded") {
       drawPlasmid(transformRef.current.k)
     } else if (!data) {
       hideTooltip()
@@ -515,7 +523,7 @@ export function PlasmidView({
   
   React.useEffect(() => {
     gcVisibleRef.current = gcVisible
-    if (status !== "ready") return
+    if (status !== "loaded") return
     drawPlasmid(transformRef.current.k)
   }, [gcVisible, status, drawPlasmid])
 
@@ -599,7 +607,7 @@ export function PlasmidView({
         const parsed = normalizePlasmidJson(json)
         dataRef.current = parsed
         setData(parsed)
-        setStatus("ready")
+        setStatus("loaded")
       } catch (err) {
         if (cancelled || (err instanceof DOMException && err.name === "AbortError")) return
         const message =
@@ -674,6 +682,19 @@ export function PlasmidView({
     }
   }, [plasmidId])
 
+  const downloadSvg = React.useCallback(() => {
+    if (!svgRef.current) return
+    const svgNode = svgRef.current
+    const xml = new XMLSerializer().serializeToString(svgNode)
+    const blob = new Blob([xml], { type: "image/svg+xml;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.download = `${plasmidId ?? "plasmid"}-map.svg`
+    link.href = url
+    link.click()
+    URL.revokeObjectURL(url)
+  }, [plasmidId])
+
   const toggleFullscreen = React.useCallback(() => {
     const wrapper = wrapperRef.current
     if (!wrapper) return
@@ -693,7 +714,7 @@ export function PlasmidView({
   }, [])
 
   const statusIcon =
-    status === "ready"
+    status === "loaded"
       ? IconCircleCheck
       : status === "error"
         ? IconAlertTriangle
@@ -710,13 +731,22 @@ export function PlasmidView({
               Plasmid View
             </div>
             <div className="text-sm font-semibold leading-tight">
-              {plasmidId ?? "Select a plasmid (click twice if needed)"}
+              {plasmidId ? (
+                plasmidId
+              ) : (
+                <>
+                  <div>Select a plasmid</div>
+                  <p className="mt-0.5 text-[0.6rem] font-normal text-muted-foreground">
+                    You may need to click twice if "Select neighbors" is on
+                  </p>
+                </>
+              )}
             </div>
           </div>
           <div
             className={cn(
               "flex h-7 items-center gap-1 rounded-full px-3 text-[0.65rem] font-semibold",
-              status === "ready"
+              status === "loaded"
                 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-100"
                 : status === "loading"
                   ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-100"
@@ -758,7 +788,7 @@ export function PlasmidView({
           className="relative h-[360px] w-full overflow-hidden rounded-xl border bg-sidebar"
         >
           <div ref={containerRef} className="absolute inset-0" aria-hidden />
-          <Tooltip innerRef={tooltipRef} />
+          <FeatureTooltip innerRef={tooltipRef} />
           {(status === "idle" || status === "loading" || status === "error") && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-sidebar/80 px-4 text-center backdrop-blur-sm">
               {status === "loading" && (
@@ -781,71 +811,128 @@ export function PlasmidView({
           )}
 
           <div className="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-border/70 bg-card/70 px-2 py-1 shadow-sm backdrop-blur">
-            <Button
-              variant={gcVisible ? "default" : "ghost"}
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => setGcVisible((prev) => !prev)}
-              disabled={!data}
-              aria-label="Toggle GC track"
-              aria-pressed={gcVisible}
-            >
-              <IconChartArcs className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => manualZoom(1.4)}
-              disabled={!data}
-              aria-label="Zoom in"
-            >
-              <IconZoomIn className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => manualZoom(0.7)}
-              disabled={!data}
-              aria-label="Zoom out"
-            >
-              <IconZoomOut className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={resetZoom}
-              disabled={!data}
-              aria-label="Reset zoom"
-            >
-              <IconRefresh className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={downloadPng}
-              disabled={!data}
-              aria-label="Download map"
-            >
-              <IconDownload className="size-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={toggleFullscreen}
-              disabled={!data}
-              aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-            >
-              {isFullscreen ? (
-                <IconMinimize className="size-4" />
-              ) : (
-                <IconMaximize className="size-4" />
-              )}
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={gcVisible ? "default" : "ghost"}
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setGcVisible((prev) => !prev)}
+                  disabled={!data}
+                  aria-label="Toggle GC track"
+                  aria-pressed={gcVisible}
+                >
+                  <IconChartArcs className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" container={isFullscreen ? wrapperRef.current : null}>
+                {gcVisible ? "Hide GC content" : "Show GC content"}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => manualZoom(1.4)}
+                  disabled={!data}
+                  aria-label="Zoom in"
+                >
+                  <IconZoomIn className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" container={isFullscreen ? wrapperRef.current : null}>Zoom in</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => manualZoom(0.7)}
+                  disabled={!data}
+                  aria-label="Zoom out"
+                >
+                  <IconZoomOut className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" container={isFullscreen ? wrapperRef.current : null}>Zoom out</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={resetZoom}
+                  disabled={!data}
+                  aria-label="Reset zoom"
+                >
+                  <IconRefresh className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" container={isFullscreen ? wrapperRef.current : null}>Reset zoom</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={downloadSvg}
+                  disabled={!data}
+                  aria-label="Download SVG"
+                >
+                  <IconDownload className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-center" container={isFullscreen ? wrapperRef.current : null}>
+                Download SVG
+                <br />
+                <span className="text-muted-foreground">(fullscreen recommended)</span>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={downloadPng}
+                  disabled={!data}
+                  aria-label="Download PNG"
+                >
+                  <IconPhoto className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-center" container={isFullscreen ? wrapperRef.current : null}>
+                Download PNG
+                <br />
+                <span className="text-muted-foreground">(fullscreen recommended)</span>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={toggleFullscreen}
+                  disabled={!data}
+                  aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                >
+                  {isFullscreen ? (
+                    <IconMinimize className="size-4" />
+                  ) : (
+                    <IconMaximize className="size-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" container={isFullscreen ? wrapperRef.current : null}>
+                {isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
