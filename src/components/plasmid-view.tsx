@@ -598,6 +598,25 @@ export function PlasmidView({
   const downloadPng = React.useCallback(() => {
     if (!svgRef.current) return
     const svgNode = svgRef.current
+    
+    // Get the actual viewBox dimensions to preserve aspect ratio
+    const { width: vbWidth, height: vbHeight } = dimensionsRef.current
+    const maxDimension = 2400
+    const aspectRatio = vbWidth / vbHeight
+    
+    // Calculate canvas dimensions preserving aspect ratio
+    let canvasWidth: number
+    let canvasHeight: number
+    if (aspectRatio >= 1) {
+      // Wider than tall
+      canvasWidth = maxDimension
+      canvasHeight = Math.round(maxDimension / aspectRatio)
+    } else {
+      // Taller than wide
+      canvasHeight = maxDimension
+      canvasWidth = Math.round(maxDimension * aspectRatio)
+    }
+    
     const xml = new XMLSerializer().serializeToString(svgNode)
     const img = new Image()
     img.src = URL.createObjectURL(
@@ -605,8 +624,8 @@ export function PlasmidView({
     )
     img.onload = () => {
       const canvas = document.createElement("canvas")
-      canvas.width = 2400
-      canvas.height = 2400
+      canvas.width = canvasWidth
+      canvas.height = canvasHeight
       const ctx = canvas.getContext("2d")
       if (!ctx) return
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
