@@ -268,7 +268,7 @@ function drawRuler(
   const pxPerTick = circumference / ticks.length
   
   if (pxPerTick > 40) {
-    const labelOffset = 12 // gap between tick end and label
+    const labelOffset = 16 // gap between tick end and label
     
     gRuler
       .selectAll("text")
@@ -276,26 +276,25 @@ function drawRuler(
       .enter()
       .append("text")
       .attr("text-anchor", "middle")
-      .attr("dominant-baseline", (d) => {
-        const a = (scale(d) * 180) / Math.PI
-        // For flipped labels (bottom half), use "hanging" so text hangs down from baseline
-        // For normal labels (top half), use "auto" so text sits above baseline
-        return a > 90 && a < 270 ? "hanging" : "auto"
-      })
-      .style("font-size", "10px")
-      .style("font-family", "Helvetica, Arial, sans-serif")
-      .style("font-weight", "500")
-      .style("fill", "#64748b")
+      .attr("dy", "4") // Vertically center text (approx 0.35em of 10px)
+      .attr("font-size", "10px")
+      .attr("font-family", "Helvetica, Arial, sans-serif")
+      .attr("font-weight", "500")
+      .attr("fill", "#64748b")
       .attr("transform", (d) => {
-        const a = (scale(d) * 180) / Math.PI
-        const isFlipped = a > 90 && a < 270
-        if (isFlipped) {
-          // For bottom half: flip the text and position it properly
-          return `rotate(${a}) rotate(180,0,-${radius + 8 + labelOffset})`
-        }
-        return `rotate(${a})`
+        const radiusTotal = radius + 8 + labelOffset
+        const angleRad = scale(d)
+        const angleDeg = (angleRad * 180) / Math.PI
+        
+        // Convert polar to cartesian coordinates (0 rad is at 12 o'clock)
+        const x = radiusTotal * Math.sin(angleRad)
+        const y = -radiusTotal * Math.cos(angleRad)
+        
+        const isFlipped = angleDeg > 90 && angleDeg < 270
+        const rotation = isFlipped ? angleDeg + 180 : angleDeg
+        
+        return `translate(${x},${y}) rotate(${rotation})`
       })
-      .attr("y", -(radius + 8 + labelOffset))
       .text((d) => (d >= 1000 ? `${Math.round(d / 1000)}k` : d === 0 ? "0" : d))
   }
 }
@@ -498,10 +497,10 @@ export function PlasmidView({
           .attr("text-anchor", isRight ? "start" : "end")
           .attr("dx", isRight ? 4 : -4)
           .attr("dy", 4)
-          .style("font-weight", "600")
-          .style("font-family", "Helvetica, Arial, sans-serif")
-          .style("font-size", "11px")
-          .style("fill", col)
+          .attr("font-weight", "600")
+          .attr("font-family", "Helvetica, Arial, sans-serif")
+          .attr("font-size", "11px")
+          .attr("fill", col)
           .text(featureLabel(d).slice(0, 36))
       })
     },
