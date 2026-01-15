@@ -239,7 +239,7 @@ function App() {
   const [focusTrigger, setFocusTrigger] = React.useState(0)
   const [indexReady, setIndexReady] = React.useState(false)
   const [isPending, startTransition] = React.useTransition()
-  const [loadMessage, setLoadMessage] = React.useState("Loading data")
+  const [loadMessage, setLoadMessage] = React.useState("Loading data (~20s)")
   const selectedPlasmidId = React.useMemo(() => {
     if (primarySelectedIndex !== null && tableData && tableColumns.includes("id")) {
       const value = getCellValue(tableData, "id", primarySelectedIndex)

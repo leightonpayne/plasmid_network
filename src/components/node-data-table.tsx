@@ -126,7 +126,7 @@ export function NodeDataTable({
 
   // Default columns that can be searched
   const defaultSearchableColumns = React.useMemo(() => {
-    const priority = ['id', 'PTU cluster', 'Assembly ID', 'Defense type (plasmid)', 'Defense subtype (plasmid)', 'PDC type', 'Anti-defense type (plasmid)', 'Anti-defense subtype (plasmid)', 'AMR genes', 'Host domain', 'Host phylum', 'Host class', 'Host order', 'Host family', 'Host genus', 'Host species', 'Host strain']
+    const priority = ['Assembly ID', 'PTU cluster', 'Average Dice Dissimilarity', 'Plasmid length (bp)', 'Topology', 'Putative phage plasmid', 'Plasmid Copy Number', 'Replication type(s)', 'Relaxase type(s)', 'MPF type', 'oriT type(s)', 'Predicted mobility', 'Defense type (plasmid)', 'Defense subtype (plasmid)', 'Defense systems (plasmid)', 'PDC type', 'PDC systems', 'Anti-defense type (plasmid)', 'Anti-defense subtype (plasmid)', 'Anti-defense systems (plasmid)', 'AMR genes', 'MGE target (plasmid)', 'Host domain', 'Host phylum', 'Host class', 'Host order', 'Host family', 'Host genus', 'Host species', 'Host strain', 'Host chromosome length (bp)', 'Plasmids in host', 'Defense type (host)', 'Defense subtype (host)', 'Defense systems (host)', 'Anti-defense type (host)', 'Anti-defense subtype (host)', 'Anti-defense systems (host)', 'MGE target (host)', 'Ecosystem', 'Ecosystem category', 'Ecosystem type', 'Ecosystem subtype', 'Ecosystem specific', 'Infomap Cluster Level 1', 'Infomap Cluster Level 2', 'Infomap Cluster Level 3', 'Infomap Cluster Level 4', 'Infomap Cluster Level 5', 'Infomap Cluster Level 6', 'Infomap Cluster Level 7', 'Infomap Cluster Level 8']
     return columns.filter(col => priority.includes(col))
   }, [columns])
 
