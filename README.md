@@ -7,6 +7,7 @@ An interactive web application for exploring the global plasmidome and visualizi
 If you use this data or tool in your research, please cite:
 
 > **Plasmids are major vectors of anti-phage defense**
+>
 > Payne LJ*†, Rodríguez Mestre M†, Zheng H†, Mayo-Muñoz D, Russel J, Camara-Wilpert S, Zhang DJ, Zhao R, Li H, Nesme J, Fineran PC, Riber L, Camargo AP, Pinilla-Redondo R*, Sørensen SJ\*
 >
 > † These authors contributed equally; \* Corresponding authors
