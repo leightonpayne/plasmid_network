@@ -17,11 +17,22 @@ import type {
 } from "@glideapps/glide-data-grid"
 import { useTheme } from "next-themes"
 import { Switch } from "@/components/ui/switch"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { IconFilter } from "@tabler/icons-react"
+
+
 
 type NodeDataTableProps = {
   open: boolean
   dataSource: unknown 
   columns: string[]
+  columnDisplayNames?: Record<string, string>
   totalRows: number
   focusRowIndex?: number | null
   focusTrigger?: number
@@ -36,7 +47,8 @@ type NodeDataTableProps = {
 export function NodeDataTable({
   open,
   dataSource,
-  columns = [], 
+  columns = [],
+  columnDisplayNames = {},
   totalRows = 0,
   focusRowIndex = null,
   focusTrigger = 0,
@@ -83,9 +95,22 @@ export function NodeDataTable({
   const [searchValue, setSearchValue] = React.useState("")
   const searchInputRef = React.useRef<HTMLInputElement | null>(null)
 
+  // Sort state - default to sorting by 'id' (Plasmid ID) ascending
+  const [sortColumn, setSortColumn] = React.useState<string>("id")
+  const [sortDirection, setSortDirection] = React.useState<"asc" | "desc">("asc")
+
   const gridColumns = React.useMemo(() => {
-    return columns.map((name) => ({ title: name, id: name }))
-  }, [columns])
+    return columns.map((name) => {
+      const displayName = columnDisplayNames[name] ?? name
+      const isSorted = name === sortColumn
+      const prefix = isSorted ? (sortDirection === "asc" ? "▲ " : "▼ ") : ""
+      
+      return {
+        title: prefix + displayName,
+        id: name,
+      }
+    })
+  }, [columns, columnDisplayNames, sortColumn, sortDirection])
 
   // --- LÓGICA DE ICONOS Y DATOS ---
   const columnVectors = React.useMemo(() => {
@@ -99,12 +124,34 @@ export function NodeDataTable({
   const [isIndexing, setIsIndexing] = React.useState(false)
   const indexingTriggeredRef = React.useRef(false)
 
-  
-  const searchableColumns = React.useMemo(() => {
-    const priority = ['id', 'species', 'genus', 'family', 'order', 'class', 'phylum', 'domain', 
-                      'Ecosystem', 'topology', 'predicted_mobility', 'cluster']
+  // Default columns that can be searched
+  const defaultSearchableColumns = React.useMemo(() => {
+    const priority = ['id', 'PTU cluster', 'Assembly ID', 'Defense type (plasmid)', 'Defense subtype (plasmid)', 'PDC type', 'Anti-defense type (plasmid)', 'Anti-defense subtype (plasmid)', 'AMR genes', 'Host domain', 'Host phylum', 'Host class', 'Host order', 'Host family', 'Host genus', 'Host species', 'Host strain']
     return columns.filter(col => priority.includes(col))
   }, [columns])
+
+  // User-selected columns for search (defaults to all searchable columns)
+  const [selectedSearchColumns, setSelectedSearchColumns] = React.useState<Set<string>>(new Set())
+  const hasInitializedSearchColumns = React.useRef(false)
+
+  // Initialize selected columns only once when defaults are available
+  React.useEffect(() => {
+    if (!hasInitializedSearchColumns.current && defaultSearchableColumns.length > 0) {
+      setSelectedSearchColumns(new Set(defaultSearchableColumns))
+      hasInitializedSearchColumns.current = true
+    }
+  }, [defaultSearchableColumns])
+
+  // Columns actually used for search (only user-selected columns)
+  const searchableColumns = React.useMemo(() => {
+    return columns.filter(col => selectedSearchColumns.has(col))
+  }, [columns, selectedSearchColumns])
+
+  // Reset search index when selected columns change
+  React.useEffect(() => {
+    indexingTriggeredRef.current = false
+    setSearchIndex(null)
+  }, [selectedSearchColumns])
 
   
   const buildSearchIndex = React.useCallback(() => {
@@ -226,6 +273,56 @@ export function NodeDataTable({
     }
     return searchFilteredRows
   }, [searchFilteredRows, selectionFilteredRows, selectionFilterSet, showOnlySelected])
+
+  // Apply sorting to the row indices
+  const sortedRowIndices = React.useMemo(() => {
+    // If no filtering, create indices for all rows
+    const indices = filteredRowIndices !== null 
+      ? [...filteredRowIndices]
+      : Array.from({ length: totalRows }, (_, i) => i)
+    
+    if (!sortColumn || indices.length === 0) return indices
+
+    const sortColIndex = columns.indexOf(sortColumn)
+    if (sortColIndex < 0) return indices
+
+    // Get values for sorting
+    const getValue = (row: number): unknown => {
+      if (columnVectors && columnVectors[sortColIndex]) {
+        return columnVectors[sortColIndex]?.get?.(row)
+      }
+      if (Array.isArray(dataSource)) {
+        return (dataSource as any[])[row]?.[sortColumn]
+      }
+      if (typeof (dataSource as any).get === "function") {
+        return (dataSource as any).get(row)?.[sortColumn]
+      }
+      return (dataSource as any)?.[row]?.[sortColumn]
+    }
+
+    // Sort with proper comparison
+    indices.sort((a, b) => {
+      const valA = getValue(a)
+      const valB = getValue(b)
+      
+      // Handle nulls/undefined
+      if (valA == null && valB == null) return 0
+      if (valA == null) return sortDirection === "asc" ? 1 : -1
+      if (valB == null) return sortDirection === "asc" ? -1 : 1
+      
+      // Compare values
+      let cmp: number
+      if (typeof valA === "number" && typeof valB === "number") {
+        cmp = valA - valB
+      } else {
+        cmp = String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: "base" })
+      }
+      
+      return sortDirection === "asc" ? cmp : -cmp
+    })
+    
+    return indices
+  }, [filteredRowIndices, totalRows, sortColumn, sortDirection, columns, columnVectors, dataSource])
 
   const visibleRowCount =
     filteredRowIndices !== null
@@ -369,8 +466,8 @@ export function NodeDataTable({
       const [col, row] = cell
 
       const sourceRow =
-        filteredRowIndices && filteredRowIndices.length > 0
-          ? filteredRowIndices[row] ?? -1
+        sortedRowIndices && sortedRowIndices.length > 0
+          ? sortedRowIndices[row] ?? -1
           : row
 
       if (!dataSource || columns.length === 0 || sourceRow < 0 || sourceRow >= totalRows) {
@@ -425,14 +522,32 @@ export function NodeDataTable({
         themeOverride: highlightTheme,
       } satisfies TextCell
     },
-    [columns, filteredRowIndices, totalRows, searchValue, isDark, getRawValue, selectedRowSet, dataSource]
+    [columns, sortedRowIndices, totalRows, searchValue, isDark, getRawValue, selectedRowSet, dataSource]
   )
 
   
   
   const editorKey = React.useMemo(
-    () => `grid-${columns.length}-${totalRows}-${isDark ? "dark" : "light"}`,
-    [columns.length, totalRows, isDark]
+    () => `grid-${columns.length}-${totalRows}-${isDark ? "dark" : "light"}-${sortColumn}-${sortDirection}`,
+    [columns.length, totalRows, isDark, sortColumn, sortDirection]
+  )
+
+  // Handle column header click for sorting
+  const handleHeaderClicked = React.useCallback(
+    (colIndex: number) => {
+      const colName = columns[colIndex]
+      if (!colName) return
+
+      if (colName === sortColumn) {
+        // Toggle direction if clicking same column
+        setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"))
+      } else {
+        // Set new column with ascending direction
+        setSortColumn(colName)
+        setSortDirection("asc")
+      }
+    },
+    [columns, sortColumn]
   )
 
   const theme = React.useMemo<Partial<Theme>>(() => {
@@ -569,8 +684,8 @@ export function NodeDataTable({
       
       const selectedSourceRows = selectedVisibleRows
         .map((visibleRow) =>
-          filteredRowIndices && filteredRowIndices.length > 0
-            ? filteredRowIndices[visibleRow]
+          sortedRowIndices && sortedRowIndices.length > 0
+            ? sortedRowIndices[visibleRow]
             : visibleRow
         )
         .filter((row) => Number.isInteger(row) && row >= 0 && row < totalRows)
@@ -586,7 +701,7 @@ export function NodeDataTable({
 
       onRowSelectionChange(next)
     },
-    [filteredRowIndices, onRowSelectionChange, totalRows, selectedRowIndices]
+    [sortedRowIndices, onRowSelectionChange, totalRows, selectedRowIndices]
   )
 
   const handleDownloadSelected = React.useCallback(() => {
@@ -695,8 +810,67 @@ export function NodeDataTable({
               >
                 🔍
               </button>
-            )}
+              )}
           </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex items-center gap-1 rounded-md border bg-background/70 px-2 py-1.5 text-xs text-muted-foreground transition hover:text-foreground hover:bg-background"
+                aria-label="Filter search columns"
+              >
+                <IconFilter className="size-3.5" />
+                <span className="hidden sm:inline">
+                  Search in {selectedSearchColumns.size} column{selectedSearchColumns.size !== 1 ? 's' : ''}
+                </span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
+              <div className="flex gap-1 px-2 py-1.5">
+                <button
+                  type="button"
+                  className="flex-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground transition"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setSelectedSearchColumns(new Set(defaultSearchableColumns))
+                  }}
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  className="flex-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground transition"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setSelectedSearchColumns(new Set())
+                  }}
+                >
+                  Deselect all
+                </button>
+              </div>
+              <DropdownMenuSeparator />
+              {defaultSearchableColumns.map((col) => (
+                <DropdownMenuCheckboxItem
+                  key={col}
+                  checked={selectedSearchColumns.has(col)}
+                  onCheckedChange={(checked) => {
+                    setSelectedSearchColumns((prev) => {
+                      const next = new Set(prev)
+                      if (checked) {
+                        next.add(col)
+                      } else {
+                        next.delete(col)
+                      }
+                      return next
+                    })
+                  }}
+                  onSelect={(e) => e.preventDefault()}
+                  className="text-xs"
+                >
+                  {columnDisplayNames[col] ?? col}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -733,7 +907,8 @@ export function NodeDataTable({
               checkboxStyle: "circle",
             }}
             
-            headerIcons={undefined} 
+            headerIcons={undefined}
+            onHeaderClicked={handleHeaderClicked}
           />
         )}
       </div>

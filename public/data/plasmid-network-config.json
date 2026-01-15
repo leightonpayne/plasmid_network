@@ -9,6 +9,7 @@
   "pointSizeBy": "Plasmid length log10 (bp)",
   "pointIncludeColumns": [
     "id",
+    "Assembly ID",
     "PTU cluster",
     "Average Dice Dissimilarity",
     "Plasmid length (bp)",
@@ -24,7 +25,6 @@
     "Defense subtype (plasmid)",
     "Defense systems (plasmid)",
     "PDC type",
-    "PDC subtype",
     "PDC systems",
     "Anti-defense type (plasmid)",
     "Anti-defense subtype (plasmid)",
@@ -60,8 +60,7 @@
     "Infomap Cluster Level 5",
     "Infomap Cluster Level 6",
     "Infomap Cluster Level 7",
-    "Infomap Cluster Level 8",
-    "Assembly ID"
+    "Infomap Cluster Level 8"
   ],
   "numericColumns": [
     "Plasmid length (bp)",
@@ -123,6 +122,7 @@
     }
   },
   "columnDisplayNames": {
+    "id": "Plasmid ID",
     "Anti_type": "Anti-defense type (plasmid)",
     "Anti_unified_subtype_name": "Anti-defense subtype (plasmid)",
     "Anti_type_host": "Anti-defense type (host)",

@@ -255,7 +255,7 @@ export function AppSidebar({
             <div className="flex items-center justify-between w-full pr-2">
               <SidebarMenuButton
                 asChild
-                className="data-[slot=sidebar-menu-button]:!p-2 rounded-xl text-left flex-1"
+                className="data-[slot=sidebar-menu-button]:p-2! rounded-xl text-left flex-1"
               >
                 <a href="#" className="flex items-center gap-3">
                   <PlasmidLogo className="h-5 w-5 text-foreground" />
@@ -302,7 +302,7 @@ export function AppSidebar({
                   </SelectTrigger>
 
                   {/* z-index to ensure it appears above offcanvas/overlays */}
-                  <SelectContent className="min-w-[400px] z-[1000]" portalled={false}>
+                  <SelectContent className="min-w-[400px] z-1000" portalled={false}>
                     {colorOptions.map((opt) => {
                       const categories = columnCategories[opt] || []
                       const isNumeric = numericColumns.has(opt)
@@ -348,7 +348,7 @@ export function AppSidebar({
                   Palette
                 </div>
                 {paletteDisabled && (
-                  <p className="text-[0.6rem] text-muted-foreground mt-[-0.25rem]">
+                  <p className="text-[0.6rem] text-muted-foreground -mt-1">
                     Choose a{" "}
                     <span className="font-medium">numeric</span> “Color by”
                     option to enable palettes.
@@ -371,7 +371,7 @@ export function AppSidebar({
                   </SelectTrigger>
 
                   {/* z-index to ensure it appears above offcanvas/overlays */}
-                  <SelectContent className="z-[1000] max-h-[300px]" portalled={false}>
+                  <SelectContent className="z-1000 max-h-[300px]" portalled={false}>
                     {sequentialPalettes.map((paletteObj: any) => {
                         const p = paletteObj.name
                         // Generate a small preview of 5 colors

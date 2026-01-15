@@ -537,6 +537,7 @@ function App() {
             open={tableOpen}
             dataSource={tableData}
             columns={tableColumns}
+            columnDisplayNames={columnDisplayNames}
             totalRows={tableTotalRows}
             focusRowIndex={focusedRowIndex}
             focusTrigger={focusTrigger}
