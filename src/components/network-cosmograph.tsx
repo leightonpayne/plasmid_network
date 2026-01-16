@@ -24,6 +24,7 @@ const DEFAULT_CONFIG: CosmographConfig = {
   spaceSize: 8192,
   backgroundColor: [10, 12, 18, 1],
   pointColor: [160, 105, 180, 0.75],
+  unknownColor: "#e1e1e6",
   linkColor: [80, 94, 120, 0.7],
   statusIndicatorMode: false,
   componentsDisplayStateMode: false,
@@ -287,7 +288,11 @@ export function NetworkCosmograph({
   const [baseColorColumn, setBaseColorColumn] = React.useState<string | undefined>(undefined)
   const [error, setError] = React.useState<string | null>(null)
   const paletteCacheRef = React.useRef<
-    Map<string, { palette: string[]; strategy: "categorical" | "continuous" }>
+    Map<string, { 
+      palette: string[]; 
+      strategy: "categorical" | "continuous";
+      explicit?: Record<string, string>;  // Optional explicit value -> color mapping
+    }>
   >(new Map())
   const [dataFiles, setDataFiles] = React.useState<{
     points?: File
@@ -295,6 +300,7 @@ export function NetworkCosmograph({
   }>({})
   const cosmographRef = React.useRef<CosmographRef>(null)
   const pointsDataLoadedRef = React.useRef(false)
+  const paletteLoadingPromiseRef = React.useRef<Promise<void> | null>(null)
   const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null)
   const [hoveredContent, setHoveredContent] = React.useState<string>("")
   const hoverRequestId = React.useRef(0)
@@ -792,43 +798,67 @@ export function NetworkCosmograph({
 
 
   const loadPalettesFromFile = React.useCallback(async () => {
+    // Already loaded - skip
     if (paletteCacheRef.current.size > 0) {
-      console.log('[loadPalettesFromFile] Palettes already loaded')
       return
     }
     
-    try {
-      console.log('[loadPalettesFromFile] Loading pre-generated palettes...')
-      const response = await fetch(`${BASE_URL}data/color-palettes.json`)
-      if (!response.ok) {
-        console.warn('[loadPalettesFromFile] Could not load palettes file, will generate on demand')
-        return
-      }
-      
-      const data = await response.json()
-      
-      
-      
-      
-      if (data.columns) {
-        const columns = data.columns as Record<string, { 
-          strategy: 'categorical' | 'continuous'
-          palette: string[]
-        }>
-        for (const [colName, { strategy, palette }] of Object.entries(columns)) {
-          paletteCacheRef.current.set(colName, { palette, strategy })
-        }
-        console.log(`[loadPalettesFromFile] Loaded ${Object.keys(columns).length} palettes from file (extended format)`)
-      } else {
-        
-        for (const [colName, palette] of Object.entries(data as Record<string, string[]>)) {
-          paletteCacheRef.current.set(colName, { palette, strategy: 'categorical' })
-        }
-        console.log(`[loadPalettesFromFile] Loaded ${Object.keys(data).length} palettes from file (simple format)`)
-      }
-    } catch (error) {
-      console.warn('[loadPalettesFromFile] Error loading palettes:', error)
+    // Already loading - wait for existing promise
+    if (paletteLoadingPromiseRef.current) {
+      return paletteLoadingPromiseRef.current
     }
+    
+    // Start loading - store promise for deduplication
+    const loadPromise = (async () => {
+      try {
+        console.log('[loadPalettesFromFile] Loading pre-generated palettes...')
+        const response = await fetch(`${BASE_URL}data/color-palettes.json`)
+        if (!response.ok) {
+          console.warn('[loadPalettesFromFile] Could not load palettes file, will generate on demand')
+          return
+        }
+        
+        const data = await response.json()
+        
+        if (data.columns) {
+          const columns = data.columns as Record<string, { 
+            strategy: 'categorical' | 'continuous'
+            palette: string[]
+            explicit?: Record<string, string>
+          }>
+          for (const [colName, { strategy, palette, explicit }] of Object.entries(columns)) {
+            paletteCacheRef.current.set(colName, { palette, strategy, explicit })
+          }
+          console.log(`[loadPalettesFromFile] Loaded ${Object.keys(columns).length} palettes from file (extended format)`)
+        } else {
+          // Simple format: { "Column Name": [...colors] } or hybrid format with explicit
+          for (const [colName, value] of Object.entries(data)) {
+            if (Array.isArray(value)) {
+              // Simple array format
+              paletteCacheRef.current.set(colName, { palette: value, strategy: 'categorical' })
+            } else if (typeof value === 'object' && value !== null) {
+              // Hybrid format: { palette: [...], explicit: { "Value": "#color" } }
+              const obj = value as { palette?: string[]; explicit?: Record<string, string>; strategy?: 'categorical' | 'continuous' }
+              const palette = obj.palette ?? []
+              const explicit = obj.explicit
+              const strategy = obj.strategy ?? 'categorical'
+              paletteCacheRef.current.set(colName, { palette, strategy, explicit })
+              if (explicit) {
+                console.log(`[loadPalettesFromFile] Loaded ${colName} with ${Object.keys(explicit).length} explicit mappings`)
+              }
+            }
+          }
+          console.log(`[loadPalettesFromFile] Loaded ${Object.keys(data).length} palettes from file`)
+        }
+      } catch (error) {
+        console.warn('[loadPalettesFromFile] Error loading palettes:', error)
+      } finally {
+        paletteLoadingPromiseRef.current = null
+      }
+    })()
+    
+    paletteLoadingPromiseRef.current = loadPromise
+    return loadPromise
   }, [])
 
   const updateColorPalette = React.useCallback(() => {
@@ -895,6 +925,86 @@ export function NetworkCosmograph({
     // specific check for categorical cache
     const cached = paletteCacheRef.current.get(colorBy)
     if (cached) {
+      // Check if we have explicit mappings - if so, we need to build a color map
+      if (cached.explicit && Object.keys(cached.explicit).length > 0) {
+        // We need to get unique values to build the full map
+        // Use async approach to get unique values from the data
+        const buildColorMap = async () => {
+          try {
+            // Get all points data and extract unique values for this column
+            const rawData = await (cg as any).getPointsData?.()
+            if (!rawData) {
+              console.warn('[updateColorPalette] Could not get points data, falling back to palette')
+              applyPalette(cached.palette, cached.strategy)
+              return
+            }
+            
+            // Extract column data - rawData might be Arrow Table or plain array
+            let columnValues: any[]
+            if (rawData.getChild && typeof rawData.getChild === 'function') {
+              // Arrow Table format
+              const column = rawData.getChild(colorBy)
+              columnValues = column ? column.toArray() : []
+            } else if (rawData.toArray && typeof rawData.toArray === 'function') {
+              // Arrow RecordBatch or similar
+              const arr = rawData.toArray()
+              columnValues = arr.map((row: any) => row?.[colorBy])
+            } else if (Array.isArray(rawData)) {
+              columnValues = rawData.map((row: any) => row?.[colorBy])
+            } else {
+              console.warn('[updateColorPalette] Unknown data format, falling back to palette')
+              applyPalette(cached.palette, cached.strategy)
+              return
+            }
+            
+            // Get unique values
+            const uniqueSet = new Set<string>()
+            for (const val of columnValues) {
+              if (val != null && val !== '' && val !== 'null' && val !== 'undefined') {
+                uniqueSet.add(String(val))
+              }
+            }
+            const uniqueValues = Array.from(uniqueSet).sort()
+            
+            if (uniqueValues.length === 0) {
+              console.warn('[updateColorPalette] No unique values found, falling back to palette')
+              applyPalette(cached.palette, cached.strategy)
+              return
+            }
+            
+            // Build the complete color map
+            const colorMap: Record<string, string> = {}
+            let paletteIndex = 0
+            
+            for (const strValue of uniqueValues) {
+              if (cached.explicit && strValue in cached.explicit) {
+                // Use explicit color
+                colorMap[strValue] = cached.explicit[strValue]
+              } else {
+                // Auto-assign from palette (cycling if necessary)
+                colorMap[strValue] = cached.palette[paletteIndex % cached.palette.length]
+                paletteIndex++
+              }
+            }
+            
+            setCurrentColorStrategy("categorical")
+            setConfig((prev) => ({
+              ...prev,
+              pointColorStrategy: "map",
+              pointColorByMap: colorMap,
+              pointColorPalette: undefined,
+            }))
+            console.log(`[updateColorPalette] Applied hybrid color map with ${Object.keys(cached.explicit || {}).length} explicit + ${paletteIndex} auto colors for ${uniqueValues.length} unique values`)
+          } catch (err) {
+            console.warn('[updateColorPalette] Could not get distinct values, falling back to palette:', err)
+            applyPalette(cached.palette, cached.strategy)
+          }
+        }
+        void buildColorMap()
+        return
+      }
+      
+      // No explicit mappings, use standard palette approach
       applyPalette(cached.palette, cached.strategy)
       return
     }
@@ -919,7 +1029,7 @@ export function NetworkCosmograph({
     // Check if we should cache this result (yes, for iwanthue it is expensive)
     paletteCacheRef.current.set(colorBy, { palette, strategy: "categorical" })
     applyPalette(palette, "categorical")
-  }, [config.pointColorBy, reversePalette, continuousPalette])
+  }, [config.pointColorBy, reversePalette, continuousPalette, numericColumns])
 
   React.useEffect(() => {
     const loadPrepared = async () => {
@@ -1032,10 +1142,11 @@ export function NetworkCosmograph({
     const cg = cosmographRef.current as any
     if (!cg?.addEventListener || !cg?.removeEventListener) return
 
-    const handleDataUploaded = () => {
+    const handleDataUploaded = async () => {
       setLoadPhase((prev) => (prev === "ready" ? "ready" : "rendering"))
-      void loadPalettesFromFile()
-      void updateColorPalette()
+      // Palette loading and color application is handled by the dataIsReady effect
+      // when loadPhase changes to 'rendering'
+      await loadPalettesFromFile()
     }
 
     cg.addEventListener("dataUploaded", handleDataUploaded)
@@ -1044,12 +1155,23 @@ export function NetworkCosmograph({
       cg.removeEventListener("dataUploaded", handleDataUploaded)
       cg.removeEventListener("graphRebuilt", handleGraphRebuilt)
     }
-  }, [updateColorPalette, loadPalettesFromFile, hasData, handleGraphRebuilt])
+  }, [loadPalettesFromFile, hasData, handleGraphRebuilt])
 
+  // Apply color palette when data is truly ready (after upload completes)
+  // This is tracked by loadPhase becoming 'rendering' or 'ready'
+  const dataIsReady = loadPhase === 'rendering' || loadPhase === 'ready'
+  
   React.useEffect(() => {
-    if (!hasData) return
-    void updateColorPalette()
-  }, [hasData, updateColorPalette])
+    if (!dataIsReady) return
+    
+    const applyColors = async () => {
+      // Ensure palettes are loaded first
+      await loadPalettesFromFile()
+      updateColorPalette()
+    }
+    
+    void applyColors()
+  }, [dataIsReady, updateColorPalette, loadPalettesFromFile])
 
   React.useEffect(() => {
     paletteCacheRef.current.clear()
@@ -1104,7 +1226,7 @@ export function NetworkCosmograph({
       await cg.dataUploaded?.()
       
       
-      void loadPalettesFromFile()
+      await loadPalettesFromFile()
       
       const raw = await cg.getPointsData()
       let allColumns: string[] =
