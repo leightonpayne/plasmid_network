@@ -126,7 +126,7 @@ export function NodeDataTable({
 
   // Default columns that can be searched
   const defaultSearchableColumns = React.useMemo(() => {
-    const priority = ['Assembly ID', 'PTU cluster', 'Average Dice Dissimilarity', 'Plasmid length (bp)', 'Topology', 'Putative phage plasmid', 'Plasmid Copy Number', 'Replication type(s)', 'Relaxase type(s)', 'MPF type', 'oriT type(s)', 'Predicted mobility', 'Defense type (plasmid)', 'Defense subtype (plasmid)', 'Defense systems (plasmid)', 'PDC type', 'PDC systems', 'Anti-defense type (plasmid)', 'Anti-defense subtype (plasmid)', 'Anti-defense systems (plasmid)', 'AMR genes', 'MGE target (plasmid)', 'Host domain', 'Host phylum', 'Host class', 'Host order', 'Host family', 'Host genus', 'Host species', 'Host strain', 'Host chromosome length (bp)', 'Plasmids in host', 'Defense type (host)', 'Defense subtype (host)', 'Defense systems (host)', 'Anti-defense type (host)', 'Anti-defense subtype (host)', 'Anti-defense systems (host)', 'MGE target (host)', 'Ecosystem', 'Ecosystem category', 'Ecosystem type', 'Ecosystem subtype', 'Ecosystem specific', 'Infomap Cluster Level 1', 'Infomap Cluster Level 2', 'Infomap Cluster Level 3', 'Infomap Cluster Level 4', 'Infomap Cluster Level 5', 'Infomap Cluster Level 6', 'Infomap Cluster Level 7', 'Infomap Cluster Level 8']
+    const priority = ['id', 'Assembly ID', 'PTU cluster', 'Average Dice Dissimilarity', 'Plasmid length (bp)', 'Topology', 'Putative phage plasmid', 'Plasmid Copy Number', 'Replication type(s)', 'Relaxase type(s)', 'MPF type', 'oriT type(s)', 'Predicted mobility', 'Defense type (plasmid)', 'Defense subtype (plasmid)', 'Defense systems (plasmid)', 'PDC type', 'PDC systems', 'Anti-defense type (plasmid)', 'Anti-defense subtype (plasmid)', 'Anti-defense systems (plasmid)', 'AMR genes', 'MGE target (plasmid)', 'Host domain', 'Host phylum', 'Host class', 'Host order', 'Host family', 'Host genus', 'Host species', 'Host strain', 'Host chromosome length (bp)', 'Plasmids in host', 'Defense type (host)', 'Defense subtype (host)', 'Defense systems (host)', 'Anti-defense type (host)', 'Anti-defense subtype (host)', 'Anti-defense systems (host)', 'MGE target (host)', 'Ecosystem', 'Ecosystem category', 'Ecosystem type', 'Ecosystem subtype', 'Ecosystem specific', 'Infomap Cluster Level 1', 'Infomap Cluster Level 2', 'Infomap Cluster Level 3', 'Infomap Cluster Level 4', 'Infomap Cluster Level 5', 'Infomap Cluster Level 6', 'Infomap Cluster Level 7', 'Infomap Cluster Level 8']
     return columns.filter(col => priority.includes(col))
   }, [columns])
 
@@ -349,15 +349,16 @@ export function NodeDataTable({
     return baseTotal
   })()
 
-  
-  const filteredRowLookup = React.useMemo(() => {
-    if (!filteredRowIndices) return null
+  // Map source row indices to their visual position in the sorted table
+  // This is crucial for correctly highlighting/scrolling to rows when sorting is active
+  const sortedRowLookup = React.useMemo(() => {
+    if (!sortedRowIndices || sortedRowIndices.length === 0) return null
     const map = new Map<number, number>()
-    filteredRowIndices.forEach((sourceIdx, visibleIdx) => {
-      map.set(sourceIdx, visibleIdx)
+    sortedRowIndices.forEach((sourceIdx, visualIdx) => {
+      map.set(sourceIdx, visualIdx)
     })
     return map
-  }, [filteredRowIndices])
+  }, [sortedRowIndices])
 
   
   React.useEffect(() => {
@@ -378,10 +379,11 @@ export function NodeDataTable({
     const visibleSelectedRows: number[] = []
     for (const sourceIdx of effectiveSelectedRowIndices) {
       let visibleIdx: number | undefined
-      if (filteredRowLookup && filteredRowLookup.size > 0) {
-        visibleIdx = filteredRowLookup.get(sourceIdx)
-      } else if (filteredRowIndices === null) {
-        
+      // Use sortedRowLookup to find the visual position in the sorted table
+      if (sortedRowLookup && sortedRowLookup.size > 0) {
+        visibleIdx = sortedRowLookup.get(sourceIdx)
+      } else if (sortedRowIndices === null || sortedRowIndices.length === 0) {
+        // No sorting, source index equals visual index
         visibleIdx = sourceIdx
       }
       if (visibleIdx !== undefined && visibleIdx >= 0 && visibleIdx < visibleRowCount) {
@@ -405,31 +407,77 @@ export function NodeDataTable({
         syncingFromExternalRef.current = false
       })
     }
-  }, [effectiveSelectedRowIndices, filteredRowLookup, filteredRowIndices, visibleRowCount])
+  }, [effectiveSelectedRowIndices, sortedRowLookup, sortedRowIndices, visibleRowCount])
 
   const enrichedGridColumns = React.useMemo(() => {
-    const getSampleValue = (colIndex: number, key: string) => {
-      if (!dataSource) return undefined
-      if (columnVectors) {
-        return columnVectors[colIndex]?.get?.(0)
-      } else if (Array.isArray(dataSource)) {
-        return (dataSource as any[])[0]?.[key]
-      } else if (typeof (dataSource as any).get === "function") {
-        return (dataSource as any).get(0)?.[key]
+    // Sample multiple rows to find max content width
+    const SAMPLE_SIZE = Math.min(100, totalRows)
+    const MIN_WIDTH = 80
+    const MAX_WIDTH = 400
+    const CHAR_WIDTH = 8 // Approximate character width in pixels
+    const PADDING = 24 // Cell padding
+
+    const getSampleValues = (colIndex: number, key: string): unknown[] => {
+      if (!dataSource) return []
+      const values: unknown[] = []
+      
+      // Sample evenly distributed rows
+      for (let i = 0; i < SAMPLE_SIZE; i++) {
+        const rowIdx = Math.floor((i / SAMPLE_SIZE) * totalRows)
+        let value: unknown
+        
+        if (columnVectors && columnVectors[colIndex]) {
+          value = columnVectors[colIndex]?.get?.(rowIdx)
+        } else if (Array.isArray(dataSource)) {
+          value = (dataSource as any[])[rowIdx]?.[key]
+        } else if (typeof (dataSource as any).get === "function") {
+          value = (dataSource as any).get(rowIdx)?.[key]
+        } else {
+          value = (dataSource as any)?.[rowIdx]?.[key]
+        }
+        
+        if (value !== null && value !== undefined) {
+          values.push(value)
+        }
       }
-      return (dataSource as any)?.[0]?.[key]
+      return values
+    }
+
+    const getAdaptiveWidth = (colName: string, samples: unknown[]): number => {
+      const displayName = columnDisplayNames[colName] ?? colName
+      // Header width: account for sort indicator and icon
+      const headerWidth = displayName.length * CHAR_WIDTH + 50
+      
+      if (samples.length === 0) {
+        return Math.max(MIN_WIDTH, Math.min(headerWidth, MAX_WIDTH))
+      }
+
+      // Find the maximum content width from samples
+      let maxContentWidth = 0
+      for (const value of samples) {
+        const strValue = typeof value === 'bigint' ? value.toString() : String(value)
+        const contentWidth = strValue.length * CHAR_WIDTH + PADDING
+        if (contentWidth > maxContentWidth) {
+          maxContentWidth = contentWidth
+        }
+      }
+
+      // Use the larger of header width or max content width, clamped to bounds
+      const idealWidth = Math.max(headerWidth, maxContentWidth)
+      return Math.max(MIN_WIDTH, Math.min(idealWidth, MAX_WIDTH))
     }
 
     return gridColumns.map((col, index) => {
-      const sampleValue = getSampleValue(index, col.id)
+      const samples = getSampleValues(index, col.id)
+      const firstSample = samples[0]
       let icon = GridColumnIcon.HeaderString
       
-      if (typeof sampleValue === 'number' || typeof sampleValue === 'bigint') {
+      if (typeof firstSample === 'number' || typeof firstSample === 'bigint') {
         icon = GridColumnIcon.HeaderNumber
-      } else if (typeof sampleValue === 'boolean') {
+      } else if (typeof firstSample === 'boolean') {
         icon = GridColumnIcon.HeaderBoolean
-      } else if (typeof sampleValue === 'string') {
-        if (sampleValue.startsWith('http://') || sampleValue.startsWith('https://')) {
+      } else if (typeof firstSample === 'string') {
+        if (firstSample.startsWith('http://') || firstSample.startsWith('https://')) {
           icon = GridColumnIcon.HeaderUri
         }
       }
@@ -437,9 +485,10 @@ export function NodeDataTable({
       return {
         ...col,
         icon,
+        width: getAdaptiveWidth(col.id, samples),
       }
     })
-  }, [gridColumns, dataSource, columnVectors])
+  }, [gridColumns, dataSource, columnVectors, columnDisplayNames, totalRows])
 
   const getRawValue = React.useCallback(
     (sourceRow: number, colIndex: number, key: string) => {
@@ -597,12 +646,15 @@ export function NodeDataTable({
     
     pendingFocusRef.current = null
     const timeoutId = setTimeout(() => {
-      const targetRow =
-        filteredRowIndices && filteredRowIndices.length > 0
-          ? filteredRowIndices.findIndex((idx) => idx === focusRowIndex)
-          : focusRowIndex
+      // Use sortedRowLookup to find the visual position in the sorted table
+      let targetRow: number | undefined
+      if (sortedRowLookup && sortedRowLookup.size > 0) {
+        targetRow = sortedRowLookup.get(focusRowIndex)
+      } else {
+        targetRow = focusRowIndex
+      }
 
-      if (Number.isInteger(targetRow) && targetRow >= 0) {
+      if (targetRow !== undefined && Number.isInteger(targetRow) && targetRow >= 0) {
         gridRef.current?.scrollTo(
           { amount: 0, unit: "cell" },
           { amount: targetRow, unit: "cell" },
@@ -615,7 +667,7 @@ export function NodeDataTable({
     }, 50)
     
     return () => clearTimeout(timeoutId)
-  }, [focusTrigger, focusRowIndex, open, filteredRowIndices])
+  }, [focusTrigger, focusRowIndex, open, sortedRowLookup])
 
   
   React.useEffect(() => {
@@ -626,12 +678,15 @@ export function NodeDataTable({
     pendingFocusRef.current = null
     
     const timeoutId = setTimeout(() => {
-      const targetRow =
-        filteredRowIndices && filteredRowIndices.length > 0
-          ? filteredRowIndices.findIndex((idx) => idx === pending)
-          : pending
+      // Use sortedRowLookup to find the visual position in the sorted table
+      let targetRow: number | undefined
+      if (sortedRowLookup && sortedRowLookup.size > 0) {
+        targetRow = sortedRowLookup.get(pending)
+      } else {
+        targetRow = pending
+      }
 
-      if (Number.isInteger(targetRow) && targetRow >= 0) {
+      if (targetRow !== undefined && Number.isInteger(targetRow) && targetRow >= 0) {
         gridRef.current?.scrollTo(
           { amount: 0, unit: "cell" },
           { amount: targetRow, unit: "cell" },
@@ -644,7 +699,7 @@ export function NodeDataTable({
     }, 100)
     
     return () => clearTimeout(timeoutId)
-  }, [open, filteredRowIndices])
+  }, [open, sortedRowLookup])
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
