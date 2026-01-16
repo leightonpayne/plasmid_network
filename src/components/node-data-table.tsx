@@ -103,7 +103,7 @@ export function NodeDataTable({
     return columns.map((name) => {
       const displayName = columnDisplayNames[name] ?? name
       const isSorted = name === sortColumn
-      const prefix = isSorted ? (sortDirection === "asc" ? "▲ " : "▼ ") : ""
+      const prefix = isSorted ? (sortDirection === "asc" ? "↑ " : "↓ ") : ""
       
       return {
         title: prefix + displayName,
